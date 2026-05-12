@@ -26,6 +26,11 @@ const ALLOWED_TAGS = new Set([
   'blockquote', 'tg-spoiler', 'tg-emoji',
 ]);
 
+/** Placeholder marker for code block protection (uses rare Unicode PUA char). */
+const CB_OPEN = '\uE000CB';
+const CB_CLOSE = '\uE001';
+const CB_RESTORE = /\uE000CB(\d+)\uE001/g;
+
 /**
  * Converts Markdown text to Telegram-safe HTML.
  *
@@ -41,7 +46,7 @@ export function markdownToTelegramHtml(md: string): string {
     /<pre>\s*<code([^>]*)>([\s\S]*?)<\/code>\s*<\/pre>/g,
     (_match, attrs: string, body: string) => {
       codeBlocks.push(`<pre><code${attrs}>${body.replace(/\n+$/, '')}</code></pre>`);
-      return `\x00CB${codeBlocks.length - 1}\x00`;
+      return `${CB_OPEN}${codeBlocks.length - 1}${CB_CLOSE}`;
     },
   );
 
@@ -92,7 +97,7 @@ export function markdownToTelegramHtml(md: string): string {
   });
 
   // 10. Restore code blocks.
-  html = html.replace(/\x00CB(\d+)\x00/g, (_m, i: string) => codeBlocks[+i]!);
+  html = html.replace(CB_RESTORE, (_m, i: string) => codeBlocks[+i]!);
 
   // 11. Collapse excessive blank lines, trim edges.
   html = html.replace(/\n{3,}/g, '\n\n').trim();

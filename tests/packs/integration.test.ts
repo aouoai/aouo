@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import { existsSync, rmSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { scanForPacks, loadPack, unloadAllPacks } from '../../src/packs/loader.js';
 import { loadManifestFile } from '../../src/packs/manifest.js';
-import { getSkill, getAllSkills, clearSkills } from '../../src/packs/skillRegistry.js';
-import { clearMenus } from '../../src/packs/fastpath.js';
+import { getSkill, getAllSkills } from '../../src/packs/skillRegistry.js';
 import { packDataPath } from '../../src/lib/paths.js';
 
 const FIXTURES_DIR = join(import.meta.dirname, '..', 'fixtures', 'packs');

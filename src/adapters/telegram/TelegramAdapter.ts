@@ -393,7 +393,6 @@ export class TelegramAdapter {
       // STT is pack-provided — try dynamic import
       let transcript = '';
       try {
-        // @ts-ignore — STT module is an optional dependency
         const stt = await import('../../lib/stt.js');
         const result = await stt.transcribeAudio(audioPath, this.config);
         if (result.success && result.transcript) {
@@ -458,7 +457,6 @@ export class TelegramAdapter {
       // Vision is pack-provided — try dynamic import
       let visionDesc = '';
       try {
-        // @ts-ignore — Vision module is an optional dependency
         const vision = await import('../../lib/vision.js');
         const result = await vision.analyzeImage(imagePath, this.config, caption || undefined);
         if (result.success && result.description) {
@@ -657,7 +655,6 @@ export class TelegramAdapter {
     // Start optional scheduler if configured
     if (this.config.cron?.enabled) {
       try {
-        // @ts-ignore — scheduler is an optional module
         const { startScheduler } = await import('../../lib/scheduler.js');
         startScheduler(this.config, {
           sendProactiveMessage: (chatId: number, text: string) => this.sendProactiveMessage(chatId, text),
@@ -721,7 +718,6 @@ export class TelegramAdapter {
   /** Gracefully stops the bot and optional scheduler. */
   async stop(): Promise<void> {
     try {
-      // @ts-ignore — scheduler is optional
       const { stopScheduler } = await import('../../lib/scheduler.js');
       stopScheduler();
     } catch { /* no scheduler */ }

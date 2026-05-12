@@ -44,7 +44,7 @@ Segments format: [{"voice":"en-GB-RyanNeural","text":"How are you?","rate":"-5%"
 
     // Attempt dynamic import of TTS lib (pack-provided)
     try {
-      // @ts-ignore — tts is an optional module, provided by packs
+      // @ts-expect-error — lib/tts.js is pack-provided, may not exist
       const ttsModule = await import('../lib/tts.js');
       if (typeof ttsModule.textToSpeech === 'function') {
         const result = await ttsModule.textToSpeech(

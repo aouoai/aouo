@@ -51,7 +51,6 @@ register({
     // Scheduler implementation will be migrated in a future phase.
     // This stub provides the interface contract.
     try {
-      // @ts-ignore — scheduler is an optional module, may not exist
       const scheduler = await import('../lib/scheduler.js');
       if (typeof scheduler[action as keyof typeof scheduler] === 'function') {
         const result = await (scheduler as any)[action](_context.config, args);

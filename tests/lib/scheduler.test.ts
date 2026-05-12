@@ -32,54 +32,54 @@ describe('scheduler', () => {
   });
 
   describe('parseSchedule', () => {
-    it('parses interval schedule', () => {
-      const s = parseSchedule('every 30m', config);
+    it('parses interval schedule', async () => {
+      const s = await parseSchedule('every 30m', config);
       expect(s.kind).toBe('interval');
       if (s.kind === 'interval') expect(s.minutes).toBe(30);
     });
 
-    it('parses hour intervals', () => {
-      const s = parseSchedule('every 2h', config);
+    it('parses hour intervals', async () => {
+      const s = await parseSchedule('every 2h', config);
       expect(s.kind).toBe('interval');
       if (s.kind === 'interval') expect(s.minutes).toBe(120);
     });
 
-    it('parses day intervals', () => {
-      const s = parseSchedule('every 1d', config);
+    it('parses day intervals', async () => {
+      const s = await parseSchedule('every 1d', config);
       expect(s.kind).toBe('interval');
       if (s.kind === 'interval') expect(s.minutes).toBe(1440);
     });
 
-    it('parses ISO timestamp as once', () => {
-      const s = parseSchedule('2030-01-01T00:00:00Z', config);
+    it('parses ISO timestamp as once', async () => {
+      const s = await parseSchedule('2030-01-01T00:00:00Z', config);
       expect(s.kind).toBe('once');
     });
 
-    it('parses relative duration as once', () => {
-      const s = parseSchedule('30m', config);
+    it('parses relative duration as once', async () => {
+      const s = await parseSchedule('30m', config);
       expect(s.kind).toBe('once');
     });
 
-    it('throws on invalid duration', () => {
-      expect(() => parseSchedule('banana', config)).toThrow('Invalid schedule');
+    it('throws on invalid duration', async () => {
+      await expect(parseSchedule('banana', config)).rejects.toThrow('Invalid schedule');
     });
 
-    it('parses cron expression', () => {
-      const s = parseSchedule('0 9 * * *', config);
+    it('parses cron expression', async () => {
+      const s = await parseSchedule('0 9 * * *', config);
       expect(s.kind).toBe('cron');
       if (s.kind === 'cron') expect(s.expr).toBe('0 9 * * *');
     });
 
-    it('parses minutes shorthand', () => {
-      const s = parseSchedule('every 5min', config);
+    it('parses minutes shorthand', async () => {
+      const s = await parseSchedule('every 5min', config);
       expect(s.kind).toBe('interval');
       if (s.kind === 'interval') expect(s.minutes).toBe(5);
     });
   });
 
   describe('job CRUD', () => {
-    it('creates a job with correct fields', () => {
-      const job = createJob(config, {
+    it('creates a job with correct fields', async () => {
+      const job = await createJob(config, {
         name: `test-create-${Date.now()}`,
         prompt: 'Say hello',
         schedule: 'every 1h',
@@ -95,8 +95,8 @@ describe('scheduler', () => {
       expect(job.deliver.chat_id).toBe('12345');
     });
 
-    it('finds a job by ID', () => {
-      const created = createJob(config, {
+    it('finds a job by ID', async () => {
+      const created = await createJob(config, {
         name: `test-find-${Date.now()}`,
         prompt: 'test',
         schedule: '30m',
@@ -109,8 +109,8 @@ describe('scheduler', () => {
       expect(found!.id).toBe(created.id);
     });
 
-    it('removes a job', () => {
-      const job = createJob(config, {
+    it('removes a job', async () => {
+      const job = await createJob(config, {
         name: `test-remove-${Date.now()}`,
         prompt: 'test',
         schedule: '1h',
@@ -122,8 +122,8 @@ describe('scheduler', () => {
       expect(listJobs().length).toBe(before - 1);
     });
 
-    it('pauses and resumes', () => {
-      const job = createJob(config, {
+    it('pauses and resumes', async () => {
+      const job = await createJob(config, {
         name: `test-pause-${Date.now()}`,
         prompt: 'test',
         schedule: 'every 1h',
@@ -136,14 +136,14 @@ describe('scheduler', () => {
       expect(paused.state).toBe('paused');
       expect(paused.next_run_at).toBeNull();
 
-      const resumed = resumeJob(config, job.id);
+      const resumed = await resumeJob(config, job.id);
       expect(resumed.enabled).toBe(true);
       expect(resumed.state).toBe('scheduled');
       expect(resumed.next_run_at).toBeTruthy();
     });
 
-    it('creates disabled jobs in paused state', () => {
-      const job = createJob(config, {
+    it('creates disabled jobs in paused state', async () => {
+      const job = await createJob(config, {
         name: `test-disabled-${Date.now()}`,
         prompt: 'test',
         schedule: 'every 1h',

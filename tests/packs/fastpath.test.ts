@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { resolveFastPath, clearMenus } from '../../src/packs/fastpath.js';
-import type { MenuPage } from '../../src/packs/fastpath.js';
 
 // We manually inject menu pages via internal state for testing
 // In production, loadPackMenus reads from disk

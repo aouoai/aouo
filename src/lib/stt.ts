@@ -112,7 +112,7 @@ export async function transcribeAudio(
     const model = config.stt.model || DEFAULT_MODEL;
 
     // Dynamic import — groq-sdk is an optional peer dependency
-    // @ts-ignore
+    // @ts-expect-error — groq-sdk is an optional peer dependency
     const Groq = (await import('groq-sdk')).default;
     const groq = new Groq({ apiKey });
     const transcription = await groq.audio.transcriptions.create({

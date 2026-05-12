@@ -3,7 +3,7 @@
  * @description Tests for session CRUD and message persistence.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   getOrCreateSession,
   createSession,

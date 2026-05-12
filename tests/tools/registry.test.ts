@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   register,
   getAllTools,
-  getEnabledTools,
   getToolSchemas,
   dispatch,
   listToolsWithStatus,
@@ -95,7 +94,7 @@ describe('tools/registry (integration)', () => {
     const cliSchemas = getToolSchemas(config, 'cli');
 
     // tg_msg should be in telegram but not cli
-    const hasTgMsgTg = tgSchemas.some(s => s.name === 'tg_msg');
+    const _hasTgMsgTg = tgSchemas.some(s => s.name === 'tg_msg');
     const hasTgMsgCli = cliSchemas.some(s => s.name === 'tg_msg');
 
     // Only check if tg_msg is registered (it may not be in this test context)

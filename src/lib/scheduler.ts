@@ -125,9 +125,9 @@ export function getJob(id: string): CronJob | undefined {
 }
 
 /** Creates a new cron job. */
-export function createJob(config: AouoConfig, input: CreateCronJobInput): CronJob {
+export async function createJob(config: AouoConfig, input: CreateCronJobInput): Promise<CronJob> {
   const now = new Date();
-  const schedule = parseSchedule(input.schedule, config);
+  const schedule = await parseSchedule(input.schedule, config);
   const job: CronJob = {
     id: randomUUID().replace(/-/g, '').slice(0, 12),
     name: input.name.trim(),
@@ -143,7 +143,7 @@ export function createJob(config: AouoConfig, input: CreateCronJobInput): CronJo
       times: input.repeat_times === undefined ? null : input.repeat_times,
       completed: 0,
     },
-    next_run_at: input.enabled === false ? null : computeNextRun(schedule, config, now),
+    next_run_at: input.enabled === false ? null : await computeNextRun(schedule, config, now),
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   };
@@ -159,7 +159,7 @@ export function createJob(config: AouoConfig, input: CreateCronJobInput): CronJo
 }
 
 /** Updates an existing cron job. */
-export function updateJob(config: AouoConfig, id: string, patch: Partial<CreateCronJobInput>): CronJob {
+export async function updateJob(config: AouoConfig, id: string, patch: Partial<CreateCronJobInput>): Promise<CronJob> {
   const jobs = loadJobs();
   const idx = jobs.findIndex(j => j.id === id || j.name === id);
   if (idx === -1) throw new Error(`Cron job not found: ${id}`);
@@ -171,13 +171,13 @@ export function updateJob(config: AouoConfig, id: string, patch: Partial<CreateC
   if (patch.chat_id !== undefined) job.deliver = { platform: 'telegram', chat_id: patch.chat_id };
   if (patch.repeat_times !== undefined) job.repeat = { ...job.repeat, times: patch.repeat_times };
   if (patch.schedule !== undefined) {
-    job.schedule = parseSchedule(patch.schedule, config);
-    job.next_run_at = job.enabled ? computeNextRun(job.schedule, config, now) : null;
+    job.schedule = await parseSchedule(patch.schedule, config);
+    job.next_run_at = job.enabled ? await computeNextRun(job.schedule, config, now) : null;
   }
   if (patch.enabled !== undefined) {
     job.enabled = patch.enabled;
     job.state = patch.enabled ? 'scheduled' : 'paused';
-    job.next_run_at = patch.enabled ? computeNextRun(job.schedule, config, now) : null;
+    job.next_run_at = patch.enabled ? await computeNextRun(job.schedule, config, now) : null;
   }
   job.updated_at = now.toISOString();
 
@@ -199,12 +199,12 @@ export function pauseJob(id: string): CronJob {
 }
 
 /** Resumes a paused job. */
-export function resumeJob(config: AouoConfig, id: string): CronJob {
+export async function resumeJob(config: AouoConfig, id: string): Promise<CronJob> {
   const jobs = loadJobs();
   const job = requireJob(jobs, id);
   job.enabled = true;
   job.state = 'scheduled';
-  job.next_run_at = computeNextRun(job.schedule, config, new Date());
+  job.next_run_at = await computeNextRun(job.schedule, config, new Date());
   job.updated_at = new Date().toISOString();
   saveJobs(jobs);
   return job;
@@ -340,13 +340,13 @@ async function runAgentForJob(config: AouoConfig, job: CronJob): Promise<string>
 
 // ── Internal: Run Completion ─────────────────────────────────────────────────
 
-function finishRun(
+async function finishRun(
   config: AouoConfig,
   id: string,
   status: 'ok' | 'silent' | 'error',
   error: string | undefined,
   startedAt: Date,
-): void {
+): Promise<void> {
   const jobs = loadJobs();
   const job = requireJob(jobs, id);
   const now = new Date();
@@ -364,7 +364,7 @@ function finishRun(
     job.next_run_at = null;
   } else {
     job.state = 'scheduled';
-    job.next_run_at = computeNextRun(job.schedule, config, now);
+    job.next_run_at = await computeNextRun(job.schedule, config, now);
   }
 
   saveJobs(jobs);
@@ -381,7 +381,7 @@ function finishRun(
  * - `"0 9 * * *"` → cron expression
  * - `"2026-01-15T09:00:00Z"` → once (absolute)
  */
-export function parseSchedule(schedule: string, config: AouoConfig): CronSchedule {
+export async function parseSchedule(schedule: string, config: AouoConfig): Promise<CronSchedule> {
   const text = schedule.trim();
   const lower = text.toLowerCase();
 
@@ -395,7 +395,7 @@ export function parseSchedule(schedule: string, config: AouoConfig): CronSchedul
   if (isCronExpression(text)) {
     // Validate by parsing — will throw on invalid expression
     try {
-      const { CronExpressionParser } = require('cron-parser');
+      const { CronExpressionParser } = await import('cron-parser');
       CronExpressionParser.parse(text, {
         currentDate: new Date(),
         tz: config.cron?.timezone || 'UTC',
@@ -419,7 +419,7 @@ export function parseSchedule(schedule: string, config: AouoConfig): CronSchedul
   return { kind: 'once', run_at: runAt, display: `once in ${text}` };
 }
 
-function computeNextRun(schedule: CronSchedule, config: AouoConfig, from: Date): string | null {
+async function computeNextRun(schedule: CronSchedule, config: AouoConfig, from: Date): Promise<string | null> {
   if (schedule.kind === 'once') return schedule.run_at;
   if (schedule.kind === 'interval') {
     return new Date(from.getTime() + schedule.minutes * 60_000).toISOString();
@@ -427,7 +427,7 @@ function computeNextRun(schedule: CronSchedule, config: AouoConfig, from: Date):
 
   // Cron expression — try cron-parser
   try {
-    const { CronExpressionParser } = require('cron-parser');
+    const { CronExpressionParser } = await import('cron-parser');
     const parsed = CronExpressionParser.parse(schedule.expr, {
       currentDate: from,
       tz: config.cron?.timezone || 'UTC',

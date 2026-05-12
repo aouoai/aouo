@@ -70,7 +70,7 @@ register({
     logger.info({ msg: 'web_search_start', query: query.substring(0, 80), maxResults });
     const t0 = Date.now();
 
-    // @ts-ignore — @tavily/core is an optional peer dependency
+    // @ts-expect-error — @tavily/core is an optional peer dependency
     const { tavily } = await import('@tavily/core');
     const client = (tavily as any)({ apiKey });
     const data = await client.search(query, {

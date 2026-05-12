@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Agent } from '../../src/agent/Agent.js';
-import type { Adapter, LLMProvider, LLMResponse, AouoConfig } from '../../src/agent/types.js';
+import type { Adapter, LLMProvider, LLMResponse } from '../../src/agent/types.js';
 import { DEFAULT_CONFIG } from '../../src/config/defaults.js';
 
 /** Minimal adapter stub. */
