@@ -4,15 +4,23 @@ Get your first aouo agent running in under 5 minutes.
 
 ## Prerequisites
 
-- **Node.js 22+** (aouo uses native SQLite and ESM)
-- **A Telegram Bot Token** — get one from [@BotFather](https://t.me/botfather)
+- **Node.js 22+** — aouo uses native SQLite (`node:sqlite`) and ESM
+- **A Telegram Bot Token** — create one via [@BotFather](https://t.me/botfather)
 - **A Gemini API Key** — get one from [Google AI Studio](https://aistudio.google.com/apikey)
 
 ## 1. Install
 
-```bash
-npm install -g @aouo/core
+::: code-group
+
+```bash [npm]
+npm install -g aouo
 ```
+
+```bash [pnpm]
+pnpm add -g aouo
+```
+
+:::
 
 ## 2. Initialize
 
@@ -20,7 +28,15 @@ npm install -g @aouo/core
 aouo init
 ```
 
-This creates `~/.aouo/` with default config and templates.
+This creates `~/.aouo/` with:
+
+```
+~/.aouo/
+├── config.json          # API keys, preferences
+├── SOUL.md              # Agent identity (core-owned)
+├── RULES.md             # Operating rules (core-owned)
+└── packs/               # Installed packs go here
+```
 
 ## 3. Configure
 
@@ -28,6 +44,7 @@ Edit `~/.aouo/config.json`:
 
 ```json
 {
+  "version": "0.1.0",
   "llm": {
     "provider": "gemini",
     "model": "gemini-2.5-flash",
@@ -40,22 +57,30 @@ Edit `~/.aouo/config.json`:
 }
 ```
 
-::: tip
-Find your Telegram user ID by messaging [@userinfobot](https://t.me/userinfobot).
+::: tip Finding your Telegram user ID
+Message [@userinfobot](https://t.me/userinfobot) on Telegram — it will reply with your numeric user ID.
 :::
 
-## 4. Start
+## 4. Start the Agent
 
 ```bash
 aouo gateway start
 ```
 
-Your bot is now running! Message it on Telegram.
+Your bot is now running! Open Telegram and send it a message.
 
-## 5. Install a Pack (Optional)
+Without any packs installed, aouo is a general-purpose assistant with persistence and scheduling. Install a pack to give it domain expertise.
+
+## 5. Install a Pack
 
 ```bash
-aouo install aouoai/english
+aouo install aouoai/english    # English learning companion
 ```
 
-Restart the gateway and your agent now has English learning skills.
+Restart the gateway and your agent now has 27+ English learning skills — dictation, shadowing, vocabulary SRS, and more.
+
+## What's Next?
+
+- [Architecture](/concepts/architecture) — How the core + pack system works
+- [Five Pillars](/concepts/five-pillars) — What makes a Domain Companion
+- [Build a Pack](/build-a-pack/first-pack) — Create your own companion
