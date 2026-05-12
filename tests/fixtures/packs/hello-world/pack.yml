@@ -1,0 +1,12 @@
+name: hello-world
+version: 1.0.0
+display_name: Hello World Pack
+description: A minimal test pack for integration testing.
+
+provided_skills:
+  - greeting
+
+schema:
+  file: schema.sql
+  owned_tables:
+    - greetings

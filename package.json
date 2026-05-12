@@ -1,0 +1,87 @@
+{
+  "name": "@aouo/core",
+  "version": "0.1.0",
+  "description": "Domain Companion agent runtime — install packs, not plugins.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "aouo": "./dist/bin/aouo.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ bin/ tests/",
+    "lint:fix": "eslint src/ bin/ tests/ --fix",
+    "format": "prettier --write 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",
+    "typecheck": "tsc --noEmit",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "prepare": "tsup"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aouoai/aouo.git"
+  },
+  "keywords": [
+    "agent",
+    "ai",
+    "companion",
+    "domain",
+    "pack",
+    "react-loop",
+    "telegram",
+    "llm"
+  ],
+  "author": "aouoai",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/aouoai/aouo/issues"
+  },
+  "homepage": "https://aouo.ai",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^13.0.0",
+    "cron-parser": "^5.5.0",
+    "grammy": "^1.42.0",
+    "gray-matter": "^4.0.3",
+    "marked": "^18.0.1",
+    "p-queue": "^9.1.2",
+    "pino": "^9.0.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
+    "vitepress": "^1.6.4",
+    "vitest": "^3.0.0"
+  }
+}

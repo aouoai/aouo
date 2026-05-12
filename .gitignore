@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Test coverage
+coverage/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Runtime data
+*.db
+*.db-wal
+*.db-shm
+
+# Agent data directory (never commit user data)
+.aouo/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+pino-pretty
+
+# Lock files (keep pnpm-lock.yaml)
+package-lock.json
+yarn.lock
