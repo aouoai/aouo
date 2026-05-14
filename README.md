@@ -2,10 +2,15 @@
 
 > **Vertical Agent App Platform** — install packs, not prompts.
 
+> 🚧 **Status: pre-alpha** · API & Pack ABI may change without deprecation notice. Not yet recommended for shared / multi-tenant deployments. Public npm releases will start at `0.x-alpha` once the safety baseline (cost limits, credential hardening, pack permission enforcement) lands. Track progress in [todo/MVP-REMEDIATION.md](todo/MVP-REMEDIATION.md).
+
 [![CI](https://github.com/aouoai/aouo/actions/workflows/ci.yml/badge.svg)](https://github.com/aouoai/aouo/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@aouo/core)](https://www.npmjs.com/package/@aouo/core)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
+
+<!-- The npm badge will return once @aouo/core@0.x-alpha is published. -->
+<!-- [![npm](https://img.shields.io/npm/v/@aouo/core)](https://www.npmjs.com/package/@aouo/core) -->
+
 
 aouo is an open-source runtime for building **vertical agent apps**: long-running AI companions that understand one domain deeply, keep durable state, run scheduled workflows, and improve through structured data feedback.
 
@@ -63,20 +68,30 @@ Every serious vertical agent app should have all five:
 
 ### Prerequisites
 
-- **Node.js ≥ 22**
+- **Node.js ≥ 22** (use `nvm use` — repo ships `.nvmrc`)
 - **pnpm** (recommended)
 
-### Install & Initialize
+### Install & Initialize (dev mode — pre-alpha)
 
 ```bash
-# Install globally
-pnpm add -g @aouo/core
+# Clone & build from source — npm publish is not live yet.
+git clone https://github.com/aouoai/aouo.git
+cd aouo
+pnpm install
+pnpm build
+pnpm link --global   # exposes the `aouo` binary on your PATH
 
 # Initialize data directory
 aouo init
 
-# Start the Telegram bot
+# Start the Telegram bot (after configuring credentials, see below)
 aouo gateway start
+```
+
+Once `0.x-alpha` is on npm, the global install path will become:
+
+```bash
+pnpm add -g @aouo/core   # not yet available
 ```
 
 ### Configuration

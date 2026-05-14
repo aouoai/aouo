@@ -10,7 +10,8 @@
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "packs/notes"
   ],
   "exports": {
     ".": {
@@ -25,6 +26,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/ bin/ tests/",
+    "lint:ci": "eslint src/ bin/ tests/ --max-warnings 113",
     "lint:fix": "eslint src/ bin/ tests/ --fix",
     "format": "prettier --write 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",
@@ -32,7 +34,7 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "prepare": "tsup"
+    "prepublishOnly": "pnpm build && pnpm lint:ci && pnpm typecheck && pnpm test"
   },
   "repository": {
     "type": "git",
