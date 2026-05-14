@@ -30,7 +30,7 @@ import { registerAllTools } from '../../tools/registry.js';
 import { logger } from '../../lib/logger.js';
 import { buildSkillIndex, getAllSkills, getSkill } from '../../packs/skillRegistry.js';
 import { getLoadedPacks } from '../../packs/loader.js';
-import { createSession, getOrCreateSession, setActiveSkill } from '../../storage/sessionStore.js';
+import { createSession, getOrCreateSession, getSessionKey, setActiveSkill } from '../../storage/sessionStore.js';
 import { resolveFastPath } from '../../packs/fastpath.js';
 import type { AouoConfig } from '../../config/defaults.js';
 import type { MessageFile } from '../../agent/types.js';
@@ -343,6 +343,39 @@ export class TelegramAdapter {
   }
 
   /**
+   * Decide which session_id to use for a turn given a freshly-computed
+   * `sessionKey`. The previously-bound `route.sessionId` is honoured ONLY
+   * when its persisted `session_key` still matches the current key. A
+   * mismatch means the binding was minted under an older (chat-wide,
+   * pack-mismatched, or topic-mismatched) key — silently reusing it
+   * would resurrect cross-pack / cross-topic history. In that case we
+   * mint a fresh session for the current key and update the route.
+   *
+   * This is the canonical session-acquisition path for any TG inbound
+   * event that runs the agent. Adding new entry points? Route them
+   * through here, not through ad-hoc `getOrCreateSession` calls.
+   */
+  private async resolveSessionId(
+    route: ConversationRoute,
+    sessionKey: string,
+  ): Promise<string> {
+    if (route.sessionId) {
+      const storedKey = getSessionKey(route.sessionId);
+      if (storedKey === sessionKey) return route.sessionId;
+      logger.warn({
+        msg: 'tg_route_session_stale',
+        routeId: route.id,
+        sessionId: route.sessionId,
+        storedKey,
+        sessionKey,
+      });
+    }
+    const fresh = await getOrCreateSession(sessionKey);
+    if (fresh !== route.sessionId) setRouteSession(route.id, fresh);
+    return fresh;
+  }
+
+  /**
    * Decides whether the final agent reply should carry an active-pack badge
    * for this conversation, and what pack name to show. The badge is meant
    * to disambiguate when the chat surface itself doesn't already convey
@@ -372,12 +405,26 @@ export class TelegramAdapter {
     return { activePack: resolved, showPackBadge };
   }
 
-  private createAgent(sessionAdapter: TelegramSessionAdapter): Agent {
+  /**
+   * Build the per-turn Agent. The `activePack` argument captures the route's
+   * bound pack into the SkillResolver closure so bare skill names (legacy
+   * sessions whose `active_skill` predates qualification, or LLM-emitted
+   * `skill_view('onboarding')`) resolve against the current pack first
+   * instead of whichever pack registered the bare name last.
+   */
+  private createAgent(sessionAdapter: TelegramSessionAdapter, activePack?: string): Agent {
     return new Agent(this.config, sessionAdapter, this.provider, {
       packs: getLoadedPacks(),
       skillIndex: buildSkillIndex(),
       resolveSkill(name) {
-        const skill = getSkill(name);
+        // Pack-scoped lookup first, then bare. The bare path is back-compat
+        // for sessions whose `active_skill` was written before we started
+        // persisting `qualifiedName` — drop the fallback once no such rows
+        // exist in production.
+        const qualified = (activePack && !name.includes(':'))
+          ? `${activePack}:${name}`
+          : null;
+        const skill = (qualified ? getSkill(qualified) : undefined) ?? getSkill(name);
         return skill ? { body: skill.body, pack: skill.pack } : undefined;
       },
     });
@@ -448,8 +495,15 @@ export class TelegramAdapter {
     // runtime is single-route by definition.
     const sessionKey = activePack
       ? conversationSessionKey(address, activePack)
-      : `tg:${ctx.chat!.id}`;
-    sessionId ??= route.sessionId ?? await getOrCreateSession(sessionKey);
+      : (route.address.threadId
+          ? `tg:${ctx.chat!.id}:thread:${route.address.threadId}`
+          : `tg:${ctx.chat!.id}`);
+    // Don't trust `route.sessionId` blindly — a session minted before
+    // pack-scoped keys (or under a different pack on the same address)
+    // would resurrect the wrong history. `resolveSessionId` validates
+    // the stored `session_key` against the current one and re-mints on
+    // mismatch.
+    sessionId ??= await this.resolveSessionId(route, sessionKey);
     const typingInterval = startTypingIndicator(ctx);
 
     logger.info({
@@ -471,7 +525,7 @@ export class TelegramAdapter {
       this.resolvePackBadgeArgs(ctx, activePack),
     );
 
-    const agent = this.createAgent(sessionAdapter);
+    const agent = this.createAgent(sessionAdapter, activePack);
 
     // ── Onboarding guard (§4.2) ──
     // Only force onboarding for the route's *active* pack — checking
@@ -485,13 +539,18 @@ export class TelegramAdapter {
       if (active && !active.onboarded) {
         const onboardingSkill = getSkill(`${activePack}:onboarding`);
         if (onboardingSkill) {
-          await setActiveSkill(sessionId, onboardingSkill.name);
+          // Persist the qualified name so a later turn that does
+          // `getActiveSkill(sid) -> resolveSkill(name)` lands on the same
+          // pack. Persisting the bare `.name` here is what caused the
+          // last-registered pack (often `create`) to capture every
+          // onboarding turn regardless of the route's active pack.
+          await setActiveSkill(sessionId, onboardingSkill.qualifiedName);
           logger.info({
             msg: 'onboarding_forced',
             pack: activePack,
             threadId: route.address.threadId,
             routeId: route.id,
-            skill: onboardingSkill.name,
+            skill: onboardingSkill.qualifiedName,
           });
         }
       }
@@ -704,6 +763,12 @@ export class TelegramAdapter {
     await registerAllTools();
 
     // ── Discover skills and build command list ──
+    // The map stores the QUALIFIED skill name (`pack:bare`) so the dynamic
+    // command handler (a) persists `active_skill` unambiguously and (b) can
+    // enforce the cross-pack guard. The TG-visible command stays the bare
+    // name so users still type `/study` rather than `/vocab_study`; the
+    // tradeoff is that two packs registering the same bare command name
+    // collide — first-write wins, plus a warning log.
     const skills = getAllSkills();
     const botCommands: Array<{ command: string; description: string }> = [
       { command: 'new', description: '🔄 New session' },
@@ -713,9 +778,18 @@ export class TelegramAdapter {
     for (const skill of skills) {
       if (!skill.command) continue;
       const cmd = skill.name.replace(/[^a-z0-9_]/g, '_').substring(0, 32);
+      if (skillCommandMap.has(cmd)) {
+        logger.warn({
+          msg: 'tg_command_collision',
+          cmd,
+          existing: skillCommandMap.get(cmd),
+          dropped: skill.qualifiedName,
+        });
+        continue;
+      }
       const desc = (skill.description || skill.name).substring(0, 256);
       botCommands.push({ command: cmd, description: desc });
-      skillCommandMap.set(cmd, skill.name);
+      skillCommandMap.set(cmd, skill.qualifiedName);
     }
 
     // ── System commands ──
@@ -770,15 +844,15 @@ export class TelegramAdapter {
         sessionId,
       });
 
-      // Pack-scoped lookup avoids the cross-pack `planner` collision
-      // (multiple packs may register the same short name). Falls back
-      // to the first skill owned by this pack so /new still does
-      // something useful even when there's no canonical entry point.
-      const startSkill = skills.find(s => s.name === `${activePack}:planner`)
-        ?? skills.find(s => s.name.startsWith(`${activePack}:`));
+      // Pack-scoped lookup. `getAllSkills()` returns objects with bare
+      // `.name` and qualified `.qualifiedName`; matching on `.pack` plus
+      // bare name avoids the previous bug where the find always missed
+      // because `.name` is bare ("planner", not "notes:planner").
+      const startSkill = skills.find(s => s.pack === activePack && s.name === 'planner')
+        ?? skills.find(s => s.pack === activePack);
       if (startSkill) {
-        await setActiveSkill(sessionId, startSkill.name);
-        const input = `[/command: ${startSkill.name}] Run the "${startSkill.name}" skill now.`;
+        await setActiveSkill(sessionId, startSkill.qualifiedName);
+        const input = `[/command: ${startSkill.qualifiedName}] Run the "${startSkill.qualifiedName}" skill now.`;
         this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId), extractThreadId(ctx));
       } else {
         await replyInTopic(ctx, '🔄 Session cleared. Send a message to start.');
@@ -1169,14 +1243,6 @@ export class TelegramAdapter {
       if (!this.isAuthorized(userId)) return;
 
       const selectedLabel = getCallbackLabel(ctx, data);
-      const matchedSkill = getSkill(data);
-      const isSkillSwitch = !!matchedSkill;
-
-      if (!isSkillSwitch) {
-        await ctx.editMessageText(
-          ctx.callbackQuery.message?.text + `\n\n→ ${selectedLabel}`
-        ).catch(() => {});
-      }
 
       const chatId = ctx.callbackQuery.message?.chat?.id;
       if (!chatId) return;
@@ -1188,6 +1254,21 @@ export class TelegramAdapter {
       const resolved = this.resolveRouteContext(ctx as Context);
       if (!resolved) return;
       const { route, activePack, sessionKey: routeSessionKey } = resolved;
+
+      // Resolve a candidate skill: prefer the pack-scoped lookup so a
+      // bare `data` matching `onboarding` doesn't dispatch into whichever
+      // pack registered that bare name last (typically `create`).
+      const skillLookup =
+        (activePack && !data.includes(':') ? getSkill(`${activePack}:${data}`) : undefined)
+        ?? getSkill(data);
+      const isSkillSwitch = !!skillLookup;
+      const skillSwitchName = skillLookup?.qualifiedName;
+
+      if (!isSkillSwitch) {
+        await ctx.editMessageText(
+          ctx.callbackQuery.message?.text + `\n\n→ ${selectedLabel}`
+        ).catch(() => {});
+      }
       // Zero-pack mode (or skill-switch from picker) falls back to a
       // topic-aware chat key so the route still has somewhere to live.
       const sessionKey = routeSessionKey
@@ -1215,7 +1296,7 @@ export class TelegramAdapter {
           this.resolvePackBadgeArgs(ctx as Context, activePack),
         );
 
-        const agent = this.createAgent(sessionAdapter);
+        const agent = this.createAgent(sessionAdapter, activePack ?? undefined);
 
         try {
           await sessionAdapter.sendThinking();
@@ -1225,10 +1306,13 @@ export class TelegramAdapter {
           };
           if (activePack) runOpts.activePack = activePack;
 
-          if (isSkillSwitch) {
+          if (isSkillSwitch && skillSwitchName) {
             const newSid = await createSession(sessionKey);
             setRouteSession(route.id, newSid);
-            await setActiveSkill(newSid, data);
+            // Persist the qualified name so the next turn's `getActiveSkill`
+            // → resolveSkill chain stays inside the picked pack instead of
+            // resolving the bare name to whichever pack registered it last.
+            await setActiveSkill(newSid, skillSwitchName);
             runOpts.sessionId = newSid;
           }
 

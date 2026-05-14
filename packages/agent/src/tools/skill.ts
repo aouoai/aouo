@@ -55,16 +55,28 @@ register({
     required: ['name'],
   },
 
-  async execute(args: Record<string, unknown>, _context: ToolContext): Promise<string> {
+  async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const name = String(args.name).trim();
     const file = args.file ? String(args.file) : undefined;
 
+    // Prefer the pack-scoped lookup when the agent has a bound activePack
+    // and the caller passed a bare name. Without this, `skill_view('onboarding')`
+    // in a notes-bound turn would resolve to whichever pack registered an
+    // `onboarding` skill last — the very cross-pack drift we are fixing.
+    const lookup = (n: string): ReturnType<typeof getSkill> => {
+      const pack = context.pack;
+      if (pack && !n.includes(':')) {
+        return getSkill(`${pack}:${n}`) ?? getSkill(n);
+      }
+      return getSkill(n);
+    };
+
     if (!file) {
-      const skill = getSkill(name);
+      const skill = lookup(name);
       if (!skill) {
         const all = getAllSkills();
         if (all.length === 0) return `Error: Skill "${name}" not found. No skills are installed.`;
-        const names = all.map(s => s.name).join(', ');
+        const names = all.map(s => s.qualifiedName).join(', ');
         return `Error: Skill "${name}" not found. Available skills: ${names}`;
       }
 
@@ -78,7 +90,7 @@ register({
     }
 
     // Level 2: read an attached file
-    const skill = getSkill(name);
+    const skill = lookup(name);
     if (!skill) return `Error: Skill "${name}" not found.`;
 
     const filePath = join(skill.dirPath, file);

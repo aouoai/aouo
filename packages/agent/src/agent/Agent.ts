@@ -442,17 +442,24 @@ export class Agent {
             const skillName = String(toolCall.args['name'] || '');
             const skill = this.resolveSkill(skillName);
             if (skill) {
-              await setActiveSkill(sessionId, skillName);
+              // Persist a pack-qualified name. Bare names collide across
+              // packs (multiple `onboarding` skills) and force every later
+              // turn to rely on the resolver's activePack fallback —
+              // safer to record the disambiguated form up front.
+              const persistName = skill.pack && !skillName.includes(':')
+                ? `${skill.pack}:${skillName}`
+                : skillName;
+              await setActiveSkill(sessionId, persistName);
               activePack = skill.pack ?? activePack;
               messages[0] = {
                 role: 'system',
                 content: buildActiveSkillSystemPrompt(
                   buildSystemPrompt(this.config, this.packs, this.skillIndex),
-                  skillName,
+                  persistName,
                   skill.body,
                 ),
               };
-              result.content = `[Skill "${skillName}" loaded — instructions are now in active context]`;
+              result.content = `[Skill "${persistName}" loaded — instructions are now in active context]`;
             }
           }
 

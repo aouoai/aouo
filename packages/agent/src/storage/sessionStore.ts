@@ -237,6 +237,21 @@ export function listSessions(limit: number = 20): SessionInfo[] {
 }
 
 /**
+ * Returns the `session_key` recorded when a session was created, or `null`
+ * if no such session exists. Callers use this to detect stale route-bound
+ * session pointers: a route may hold a session_id that was minted under an
+ * earlier (chat-wide) key format, and silently reusing it would resurrect
+ * cross-topic / cross-pack history. Compare against the freshly-computed
+ * sessionKey for the inbound event and mint a new session on mismatch.
+ */
+export function getSessionKey(sessionId: string): string | null {
+  const rows = getDb()
+    .prepare('SELECT session_key FROM sessions WHERE id = ?')
+    .all(sessionId) as Array<{ session_key: string }>;
+  return rows.length > 0 ? rows[0]!.session_key : null;
+}
+
+/**
  * Gets the active skill name for a session.
  *
  * @param sessionId - Session UUID.

@@ -16,8 +16,17 @@ import { logger } from '../lib/logger.js';
  * A registered skill with metadata extracted from SKILL.md frontmatter.
  */
 export interface RegisteredSkill {
-  /** Qualified name (e.g., 'shadowing' or 'english:shadowing'). */
+  /** Bare skill name as it appears on disk (e.g., 'shadowing'). */
   name: string;
+  /**
+   * Pack-qualified canonical name (e.g., 'english:shadowing').
+   *
+   * MUST be used at every persistence / cross-pack boundary —
+   * persisting bare names into `sessions.active_skill` causes
+   * cross-pack resurrection when two packs ship a skill with the
+   * same bare name (last-registered wins on bare lookup).
+   */
+  qualifiedName: string;
   /** The pack that owns this skill. */
   pack: string;
   /** Human-readable display name from frontmatter. */
@@ -60,8 +69,10 @@ export function registerSkill(pack: string, skillName: string, skillDir: string)
     const raw = readFileSync(filePath, 'utf-8');
     const { data, content } = matter(raw);
 
+    const qualifiedName = `${pack}:${skillName}`;
     const skill: RegisteredSkill = {
       name: skillName,
+      qualifiedName,
       pack,
       displayName: (data['display_name'] as string) || (data['name'] as string) || skillName,
       description: (data['description'] as string) || '',
@@ -71,10 +82,12 @@ export function registerSkill(pack: string, skillName: string, skillDir: string)
       command: data['command'] === true,
     };
 
+    // Store under both keys. Bare-name registration is best-effort — when
+    // two packs ship a skill with the same bare name, the second wins on
+    // bare lookup. Callers that need disambiguation MUST use the qualified
+    // key (every persistence / cross-pack boundary inside this codebase
+    // does so via `skill.qualifiedName`).
     skills.set(skillName, skill);
-
-    // Also register with pack-qualified name for disambiguation
-    const qualifiedName = `${pack}:${skillName}`;
     skills.set(qualifiedName, skill);
 
     return true;
@@ -127,19 +140,17 @@ export function getSkill(name: string): RegisteredSkill | undefined {
 }
 
 /**
- * Returns all registered skills.
+ * Returns all registered skills, one entry per (pack, skill).
  *
- * @returns Array of all registered skills (de-duplicated by simple name).
+ * Iterates the qualified-name keys exclusively — iterating bare-name
+ * keys would silently drop skills whose bare name collides across packs
+ * (e.g., `notes:onboarding` and `create:onboarding`), leaving only the
+ * last-registered owner. The qualified key is the unambiguous identity.
  */
 export function getAllSkills(): RegisteredSkill[] {
-  // De-duplicate: only return simple-name entries to avoid doubles
-  const seen = new Set<string>();
   const result: RegisteredSkill[] = [];
   for (const [key, skill] of skills) {
-    if (!key.includes(':') && !seen.has(skill.name)) {
-      seen.add(skill.name);
-      result.push(skill);
-    }
+    if (key.includes(':')) result.push(skill);
   }
   return result;
 }
@@ -174,7 +185,10 @@ export function buildSkillIndex(): string {
     lines.push('');
     for (const skill of packSkills) {
       const desc = skill.description ? ` — ${skill.description}` : '';
-      lines.push(`- **${skill.displayName}** (\`${skill.name}\`)${desc}`);
+      // Print the qualified name so packs that ship a same-bare-name
+      // skill (e.g., `notes:onboarding`, `create:onboarding`) remain
+      // unambiguous from the model's perspective.
+      lines.push(`- **${skill.displayName}** (\`${skill.qualifiedName}\`)${desc}`);
     }
     lines.push('');
   }
