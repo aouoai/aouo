@@ -206,6 +206,53 @@ export interface AdapterMessageResult {
 }
 
 /**
+ * Per-feature declaration of what an adapter can natively render.
+ *
+ * Used by the message-dispatch tool tier to decide whether to pass a
+ * payload through to the adapter unchanged or to degrade it to a more
+ * universally supported shape (typically `text` or `keyboard`). Every
+ * field is independent because platforms vary along several axes:
+ * Telegram has native polls but Discord doesn't; Discord has native
+ * threads but Feishu uses interactive cards; etc.
+ *
+ * An undefined `capabilities` on the {@link Adapter} interface is
+ * treated as "all features supported" so legacy adapters and test
+ * stubs continue to work without modification.
+ */
+export interface AdapterCapabilities {
+  /** Native quiz / poll widget with answer correlation. */
+  readonly quiz: boolean;
+  /** Native voice-note bubble (typically OGG/Opus). */
+  readonly voice: boolean;
+  /** Audio file attachment with controls. */
+  readonly audio: boolean;
+  /** Live in-place countdown via message edits. */
+  readonly countdown: boolean;
+  /** Client-side pagination over multiple pages via inline buttons. */
+  readonly paginate: boolean;
+  /** Emoji reactions on a target message. */
+  readonly react: boolean;
+  /** In-place message editing (powers streaming token replies). */
+  readonly editMessage: boolean;
+}
+
+/**
+ * Default capability profile assumed for adapters that omit the
+ * `capabilities` field. Mirrors what the Telegram adapter natively
+ * supports — chosen so today's behavior is unchanged when an adapter
+ * is migrated incrementally to declare its capabilities.
+ */
+export const FULL_ADAPTER_CAPABILITIES: AdapterCapabilities = {
+  quiz: true,
+  voice: true,
+  audio: true,
+  countdown: true,
+  paginate: true,
+  react: true,
+  editMessage: true,
+};
+
+/**
  * Platform adapter interface for user interaction.
  *
  * The Agent remains platform-agnostic by communicating exclusively through
@@ -215,6 +262,14 @@ export interface AdapterMessageResult {
 export interface Adapter {
   /** Platform identifier used for runtime branching (e.g., 'telegram', 'cli'). */
   readonly platform: string;
+
+  /**
+   * Declarative description of which rich-message features this adapter
+   * renders natively. The message-dispatch tool reads this to decide
+   * whether to degrade a payload before handing it to {@link dispatchMessage}.
+   * Omit to mean "all features supported" (matches legacy behavior).
+   */
+  readonly capabilities?: AdapterCapabilities;
 
   /**
    * Sends a text response to the user.

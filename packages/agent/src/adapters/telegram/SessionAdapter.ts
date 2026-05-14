@@ -78,6 +78,15 @@ function buildInlineKeyboard(buttons: string[][]): InlineKeyboard {
 
 export class TelegramSessionAdapter implements Adapter {
   readonly platform = 'telegram' as const;
+  readonly capabilities = {
+    quiz: true,
+    voice: true,
+    audio: true,
+    countdown: true,
+    paginate: true,
+    react: true,
+    editMessage: true,
+  } as const;
 
   private ctx: Context;
   private bot: Bot;

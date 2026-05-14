@@ -8,11 +8,13 @@
 
 import { register } from './registry.js';
 import type {
+  AdapterCapabilities,
   AdapterMessagePayload,
   AdapterMessageResult,
   ToolContext,
   ToolParameterSchema,
 } from '../agent/types.js';
+import { FULL_ADAPTER_CAPABILITIES } from '../agent/types.js';
 
 export const MESSAGE_TOOL_PARAMETERS: ToolParameterSchema = {
   type: 'object',
@@ -107,6 +109,123 @@ export function normalizeMessageArgs(args: Record<string, unknown>): AdapterMess
   return payload;
 }
 
+/**
+ * Map a payload type onto the capability flag that gates it. Returns
+ * `undefined` for baseline types (text, keyboard, edit, delete, action,
+ * document) that every adapter is expected to support; those bypass the
+ * degrade tier.
+ *
+ * Kept as a small switch (not a Record) so future additions to
+ * AdapterMessageType cause a type-check failure rather than silently
+ * defaulting to "no gate".
+ */
+function capabilityGateFor(type: AdapterMessagePayload['type']): keyof AdapterCapabilities | undefined {
+  switch (type) {
+    case 'quiz': return 'quiz';
+    case 'voice': return 'voice';
+    case 'audio': return 'audio';
+    case 'countdown': return 'countdown';
+    case 'paginate': return 'paginate';
+    case 'react': return 'react';
+    case 'edit': return 'editMessage';
+    case 'text':
+    case 'keyboard':
+    case 'document':
+    case 'delete':
+    case 'action':
+      return undefined;
+  }
+}
+
+/**
+ * Render a quiz as a text + inline-keyboard pair when the adapter lacks
+ * native quiz support. Each option becomes a button with `quiz_<idx>`
+ * callback data so adapters can wire up answer correlation; the prompt
+ * line keeps the question and (when present) the explanation as a hint.
+ */
+function quizToKeyboard(payload: AdapterMessagePayload): AdapterMessagePayload {
+  const options = payload.options ?? [];
+  const buttons: string[][] = options.map((opt, idx) => [`${opt}|quiz_${idx}`]);
+  const text = (payload.text ?? '').trim() || '(quiz)';
+  return {
+    type: 'keyboard',
+    text,
+    buttons,
+  };
+}
+
+/**
+ * Apply capability-aware degrade to a payload. Returns the original
+ * payload unchanged when the adapter natively supports the requested
+ * type, otherwise returns a degraded payload that uses only baseline
+ * features. The accompanying `note` is appended to the result message
+ * so the LLM knows the requested form didn't render verbatim.
+ *
+ * Pure helper, testable in isolation. The actual capability table is
+ * passed in so future adapters with custom rules don't have to live
+ * inside this module.
+ */
+export function degradeMessagePayload(
+  payload: AdapterMessagePayload,
+  caps: AdapterCapabilities,
+): { payload: AdapterMessagePayload; note?: string } {
+  const gate = capabilityGateFor(payload.type);
+  if (!gate || caps[gate]) return { payload };
+
+  switch (payload.type) {
+    case 'quiz':
+      return {
+        payload: quizToKeyboard(payload),
+        note: 'platform_lacks_native_quiz_rendered_as_keyboard',
+      };
+    case 'voice':
+      if (caps.audio) {
+        return {
+          payload: { ...payload, type: 'audio' },
+          note: 'platform_lacks_voice_rendered_as_audio',
+        };
+      }
+      return {
+        payload: { type: 'text', text: payload.text || payload.url || '(voice message)' },
+        note: 'platform_lacks_voice_rendered_as_text',
+      };
+    case 'audio':
+      return {
+        payload: { type: 'text', text: payload.text || payload.url || '(audio message)' },
+        note: 'platform_lacks_audio_rendered_as_text',
+      };
+    case 'countdown':
+      return {
+        payload: {
+          type: 'text',
+          text: (payload.text || 'Countdown').replace(/\{seconds\}/g, String(payload.seconds ?? 0)),
+        },
+        note: 'platform_lacks_live_countdown_rendered_as_static_text',
+      };
+    case 'paginate': {
+      // splitMarkdownForTelegram-style paginate input uses ---PAGE--- as
+      // a delimiter (see MESSAGE_TOOL_PARAMETERS); we just collapse pages.
+      const text = (payload.text || '').split(/-{3}PAGE-{3}/).join('\n\n');
+      return {
+        payload: { type: 'text', text },
+        note: 'platform_lacks_pagination_rendered_as_flat_text',
+      };
+    }
+    case 'react':
+      return {
+        payload: { type: 'text', text: `(reaction: ${payload.emoji ?? '👍'})` },
+        note: 'platform_lacks_reactions_rendered_as_text',
+      };
+    case 'edit':
+      return {
+        payload: { type: 'text', text: payload.text || '' },
+        note: 'platform_lacks_message_edit_sent_as_new_message',
+      };
+    default:
+      return { payload };
+  }
+}
+
 function serializeMessageResult(result: AdapterMessageResult): string {
   const { ok, messageId, pollId, pageCount, sentContent, error, ...extra } = result;
   const output: Record<string, unknown> = { ok, ...extra };
@@ -122,10 +241,16 @@ export async function executeMessageTool(
   args: Record<string, unknown>,
   context: ToolContext,
 ): Promise<string> {
-  const payload = normalizeMessageArgs(args);
+  const rawPayload = normalizeMessageArgs(args);
+  // Apply capability-aware degrade BEFORE dispatch so adapters never see
+  // payloads they can't render. Adapters that omit `capabilities` are
+  // treated as fully-featured (legacy behavior).
+  const caps = context.adapter.capabilities ?? FULL_ADAPTER_CAPABILITIES;
+  const { payload, note } = degradeMessagePayload(rawPayload, caps);
 
   if (context.adapter.dispatchMessage) {
-    return serializeMessageResult(await context.adapter.dispatchMessage(payload));
+    const result = await context.adapter.dispatchMessage(payload);
+    return serializeMessageResult(note ? { ...result, degraded: note } : result);
   }
 
   if (payload.type === 'text') {
