@@ -1,6 +1,6 @@
 {
-  "name": "@aouo/core",
-  "version": "0.1.0",
+  "name": "@aouo/agent",
+  "version": "0.0.1",
   "description": "Vertical agent app platform — install packs, not prompts.",
   "type": "module",
   "main": "./dist/index.js",

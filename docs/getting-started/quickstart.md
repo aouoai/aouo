@@ -13,11 +13,11 @@ Get your first aouo agent running in under 5 minutes.
 ::: code-group
 
 ```bash [npm]
-npm install -g @aouo/core
+npm install -g @aouo/agent
 ```
 
 ```bash [pnpm]
-pnpm add -g @aouo/core
+pnpm add -g @aouo/agent
 ```
 
 :::

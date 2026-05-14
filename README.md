@@ -8,8 +8,8 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 
-<!-- The npm badge will return once @aouo/core@0.x-alpha is published. -->
-<!-- [![npm](https://img.shields.io/npm/v/@aouo/core)](https://www.npmjs.com/package/@aouo/core) -->
+<!-- The npm badge will return once @aouo/agent@0.x-alpha is published. -->
+<!-- [![npm](https://img.shields.io/npm/v/@aouo/agent)](https://www.npmjs.com/package/@aouo/agent) -->
 
 
 aouo is an open-source runtime for building **vertical agent apps**: long-running AI companions that understand one domain deeply, keep durable state, run scheduled workflows, and improve through structured data feedback.
@@ -56,7 +56,7 @@ Every serious vertical agent app should have all five:
          └─────────┼──────────┘
                    │ depends on
           ┌────────▼────────┐
-          │   @aouo/core    │  ← App OS
+          │   @aouo/agent    │  ← App OS
           │  Agent runtime  │
           │  Pack loader    │
           │  Persist layer  │
@@ -91,7 +91,7 @@ aouo gateway start
 Once `0.x-alpha` is on npm, the global install path will become:
 
 ```bash
-pnpm add -g @aouo/core   # not yet available
+pnpm add -g @aouo/agent   # not yet available
 ```
 
 ### Configuration
