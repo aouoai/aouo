@@ -10,6 +10,11 @@ import pino from 'pino';
 /**
  * Singleton logger instance.
  *
+ * All structured log records pass through {@link redactSecrets} so accidental
+ * inclusion of bot tokens, bearer tokens, or API keys in a log payload is
+ * scrubbed before transport. The redaction is conservative — it only matches
+ * recognized secret shapes, so plain log content is untouched.
+ *
  * @example
  * ```typescript
  * logger.info({ msg: 'tool_call', tool: 'persist' });
@@ -22,6 +27,7 @@ export const logger = pino({
     level(label) {
       return { level: label };
     },
+    log: redactLogObject,
   },
   timestamp: pino.stdTimeFunctions.isoTime,
 });
@@ -59,4 +65,22 @@ export function redactSecrets(input: string): string {
     .replace(/(["']?api[_-]?key["']?\s*[:=]\s*["']?)[A-Za-z0-9._-]{8,}/gi, '$1<redacted>')
     // URL query: ?key=… or &key=…
     .replace(/([?&]key=)[A-Za-z0-9._-]{8,}/g, '$1<redacted>');
+}
+
+/**
+ * Pino `formatters.log` hook — walks the top-level object emitted by each log
+ * call and runs every string value through {@link redactSecrets}. Non-string
+ * values pass through unchanged. Pino already serialized any nested data into
+ * the same object level (via `mergingObject`), so a one-level walk is
+ * sufficient for the structured log style this codebase uses.
+ */
+export function redactLogObject(obj: Record<string, unknown>): Record<string, unknown> {
+  for (const key of Object.keys(obj)) {
+    const v = obj[key];
+    if (typeof v === 'string') {
+      const redacted = redactSecrets(v);
+      if (redacted !== v) obj[key] = redacted;
+    }
+  }
+  return obj;
 }
