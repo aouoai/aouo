@@ -44,6 +44,7 @@ import {
 import {
   buildAddressFromTelegram,
   extractThreadId,
+  findPackForTopicName,
   formatRouteSummary,
   isUserAuthorized,
   packPickerKeyboard,
@@ -401,6 +402,100 @@ export class TelegramAdapter {
     }
   }
 
+  // ── Topic-per-pack Setup ──────────────────────────────────────────────────
+
+  /**
+   * Implements `/setup_topics`: in a forum-mode supergroup, create one
+   * forum topic per loaded pack (skipping any pack that already has a
+   * route row in this chat bound to a thread) and persist the binding
+   * to `conversation_routes` so subsequent inbound messages in those
+   * topics route to the right pack without the user typing `/use`.
+   *
+   * Preconditions enforced inline:
+   *   - Chat must be a supergroup AND have `is_forum: true`.
+   *   - Bot needs admin rights with `can_manage_topics`. We don't fetch
+   *     getChatMember to pre-check — instead we let createForumTopic
+   *     surface the failure and report a user-actionable error.
+   *
+   * Idempotent: re-running after partial success won't recreate
+   * already-bound topics for the same (chat, pack) pair.
+   */
+  private async runSetupTopics(ctx: Context): Promise<void> {
+    const chat = ctx.chat;
+    if (!chat) {
+      await replyInTopic(ctx, '⚠️ Could not determine chat.');
+      return;
+    }
+    // is_forum is only present on supergroups when forum mode is enabled.
+    const isForum = chat.type === 'supergroup' && (chat as { is_forum?: boolean }).is_forum === true;
+    if (!isForum) {
+      await replyInTopic(ctx,
+        '🧵 `/setup_topics` only works in a forum-enabled supergroup.\n\n' +
+        'In Telegram: open the group → ⚙️ Manage Group → Topics → enable.',
+        { parse_mode: 'Markdown' },
+      );
+      return;
+    }
+
+    const loaded = getLoadedPacks();
+    if (loaded.length === 0) {
+      await replyInTopic(ctx, '⚠️ No packs are installed. Run `aouo pack link <path>` first.');
+      return;
+    }
+
+    // Find packs that already have a route bound to a thread in THIS chat,
+    // so we don't create duplicate topics on a second run.
+    const db = (await import('../../storage/db.js')).getDb();
+    const boundRows = db
+      .prepare(
+        "SELECT active_pack, thread_id FROM conversation_routes " +
+        "WHERE platform = 'tg' AND chat_id = ? AND thread_id != '' AND active_pack IS NOT NULL",
+      )
+      .all(String(chat.id)) as Array<{ active_pack: string; thread_id: string }>;
+    const alreadyBound = new Set(boundRows.map((r) => r.active_pack));
+
+    const created: string[] = [];
+    const skipped: string[] = [];
+    const failed: Array<{ pack: string; error: string }> = [];
+
+    for (const pack of loaded) {
+      const name = pack.manifest.name;
+      if (alreadyBound.has(name)) {
+        skipped.push(name);
+        continue;
+      }
+      try {
+        const topic = await this.bot.api.createForumTopic(chat.id, name);
+        const route = getOrCreateRoute({
+          platform: 'tg',
+          chatId: String(chat.id),
+          threadId: String(topic.message_thread_id),
+        });
+        setRoutePack(route.id, name);
+        logger.info({ msg: 'tg_topic_created', chatId: chat.id, threadId: topic.message_thread_id, pack: name });
+        created.push(name);
+      } catch (err) {
+        const msg = (err as Error).message;
+        logger.warn({ msg: 'tg_topic_create_failed', pack: name, error: msg });
+        failed.push({ pack: name, error: msg });
+      }
+    }
+
+    const lines: string[] = ['🧵 *Topic setup*'];
+    if (created.length) lines.push(`✅ Created: ${created.map((n) => `\`${n}\``).join(', ')}`);
+    if (skipped.length) lines.push(`↪️ Already bound: ${skipped.map((n) => `\`${n}\``).join(', ')}`);
+    if (failed.length) {
+      lines.push('❌ Failed:');
+      for (const f of failed) lines.push(`  • \`${f.pack}\` — ${f.error}`);
+      lines.push('');
+      lines.push('Make sure the bot is an admin with **Manage Topics** permission.');
+    }
+    if (!created.length && !skipped.length && !failed.length) {
+      lines.push('Nothing to do.');
+    }
+    await replyInTopic(ctx, lines.join('\n'), { parse_mode: 'Markdown' });
+  }
+
   // ── Pack Picker ───────────────────────────────────────────────────────────
 
   private async sendPackPicker(ctx: Context, packs: string[], currentPack?: string): Promise<void> {
@@ -555,11 +650,18 @@ export class TelegramAdapter {
       await replyInTopic(ctx,formatRouteSummary(route, loadedNames), { parse_mode: 'Markdown' });
     });
 
+    this.bot.command('setup_topics', async (ctx) => {
+      const userId = ctx.from?.id;
+      if (!this.isAuthorized(userId)) return;
+      await this.runSetupTopics(ctx);
+    });
+
     // Append system commands to the menu list
     botCommands.push(
       { command: 'pack', description: '📦 List / pick a pack' },
       { command: 'use', description: '🔀 Switch active pack' },
       { command: 'whereami', description: '📍 Show current route state' },
+      { command: 'setup_topics', description: '🧵 Auto-create one forum topic per pack (forum supergroups)' },
       { command: 'kill', description: '💀 Force stop & clear' },
     );
 
@@ -578,6 +680,38 @@ export class TelegramAdapter {
         this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId), extractThreadId(ctx));
       });
     }
+
+    // ── Forum topic creation → pack auto-bind ──────────────────────────────
+    // When a forum topic is created (either by us via /setup_topics, or by
+    // a user manually creating a topic with a name that matches a loaded
+    // pack), persist the route binding so the first inbound message in
+    // that topic goes straight to the right pack without the user typing
+    // `/use`. Idempotent: re-binding the same (chat, thread) to the same
+    // pack is a no-op in setRoutePack.
+    this.bot.on('message:forum_topic_created', async (ctx) => {
+      const chat = ctx.chat;
+      const threadId = ctx.message.message_thread_id;
+      const name = ctx.message.forum_topic_created.name;
+      if (!chat || !threadId || !name) return;
+
+      const match = findPackForTopicName(name, getLoadedPacks().map((p) => p.manifest.name));
+      if (!match) {
+        logger.debug({ msg: 'tg_topic_created_no_match', chatId: chat.id, threadId, name });
+        return;
+      }
+
+      const route = getOrCreateRoute({
+        platform: 'tg',
+        chatId: String(chat.id),
+        threadId: String(threadId),
+      });
+      if (route.activePack === match) {
+        // Likely our own /setup_topics — the binding is already in place.
+        return;
+      }
+      setRoutePack(route.id, match);
+      logger.info({ msg: 'tg_topic_auto_bound', chatId: chat.id, threadId, pack: match, name });
+    });
 
     // ── Text message handler ──
 

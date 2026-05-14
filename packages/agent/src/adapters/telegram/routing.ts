@@ -97,6 +97,30 @@ export function packPickerKeyboard(
 }
 
 /**
+ * Match a forum-topic name against the list of loaded pack names.
+ *
+ * Returns the canonical pack name (as it appears in the loaded list) when
+ * the topic name matches case-insensitively, or `null` when there is no
+ * match. Used by the forum-topic auto-bind path so a user-created topic
+ * called `Vocab` binds to the `vocab` pack without a manual `/use` call.
+ *
+ * Pure helper, adapter-agnostic. Keeps the matching policy in one place
+ * so the rule (case-insensitive, exact-match-after-trim) is testable
+ * separately from the I/O side of the listener.
+ */
+export function findPackForTopicName(
+  topicName: string,
+  loadedPacks: readonly string[],
+): string | null {
+  const normalized = topicName.trim().toLowerCase();
+  if (!normalized) return null;
+  for (const pack of loadedPacks) {
+    if (pack.toLowerCase() === normalized) return pack;
+  }
+  return null;
+}
+
+/**
  * Append a small "— <pack>" footer to a reply so the user can tell which
  * pack is currently bound to the conversation without running `/whereami`.
  *

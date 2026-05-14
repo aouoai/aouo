@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   appendPackBadge,
   buildAddressFromTelegram,
+  findPackForTopicName,
   formatRouteSummary,
   isUserAuthorized,
   packPickerKeyboard,
@@ -140,6 +141,27 @@ describe('adapters/telegram/routing', () => {
 
     it('returns content unchanged when activePack is null (route never picked)', () => {
       expect(appendPackBadge('Hello', { activePack: null, show: true })).toBe('Hello');
+    });
+  });
+
+  describe('findPackForTopicName', () => {
+    it('matches case-insensitively and returns the canonical pack name', () => {
+      expect(findPackForTopicName('Vocab', ['notes', 'vocab', 'create'])).toBe('vocab');
+      expect(findPackForTopicName('VOCAB', ['notes', 'vocab', 'create'])).toBe('vocab');
+    });
+
+    it('trims surrounding whitespace before matching', () => {
+      expect(findPackForTopicName('  notes  ', ['notes', 'vocab'])).toBe('notes');
+    });
+
+    it('returns null when no pack matches', () => {
+      expect(findPackForTopicName('General', ['notes', 'vocab'])).toBeNull();
+      expect(findPackForTopicName('chat', ['notes', 'vocab'])).toBeNull();
+    });
+
+    it('returns null for empty / whitespace-only names', () => {
+      expect(findPackForTopicName('', ['notes'])).toBeNull();
+      expect(findPackForTopicName('   ', ['notes'])).toBeNull();
     });
   });
 
