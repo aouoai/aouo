@@ -10,7 +10,7 @@
 import type { Message, LLMResponse, ToolParameterSchema, LLMProvider, ChatOptions } from '../agent/types.js';
 import type { AouoConfig } from '../config/defaults.js';
 import { classifyApiError } from '../agent/errorClassifier.js';
-import { logger } from '../lib/logger.js';
+import { logger, redactSecrets } from '../lib/logger.js';
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -298,7 +298,7 @@ export class GeminiProvider implements LLMProvider {
           : `Gemini API fetch failed: ${(fetchErr as Error).message}`;
         logger.error({
           msg: 'api_fetch_error', provider: 'gemini',
-          error: errMsg, aborted: isAbort, attempt,
+          error: redactSecrets(errMsg), aborted: isAbort, attempt,
           elapsed_ms: Date.now() - startTime,
         });
 
@@ -313,14 +313,15 @@ export class GeminiProvider implements LLMProvider {
 
       if (!response.ok) {
         const errText = await response.text();
-        const apiErr = new Error(`Gemini API error (${response.status}): ${errText.substring(0, 500)}`);
+        const safeBody = redactSecrets(errText.substring(0, 200));
+        const apiErr = new Error(`Gemini API error (${response.status}): ${redactSecrets(errText.substring(0, 500))}`);
         const classified = classifyApiError(apiErr);
 
         logger.error({
           msg: 'api_error', provider: 'gemini',
           status: response.status, reason: classified.reason,
           retryable: classified.retryable,
-          body: errText.substring(0, 200),
+          body: safeBody,
           elapsed_ms: Date.now() - startTime, attempt,
         });
 

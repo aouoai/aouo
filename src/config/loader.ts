@@ -11,7 +11,7 @@
  * override values inside the configuration.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { CONFIG_PATH } from '../lib/paths.js';
 import { DEFAULT_CONFIG, type AouoConfig } from './defaults.js';
@@ -117,7 +117,9 @@ export function saveConfig(config?: AouoConfig): void {
 
   const dir = dirname(CONFIG_PATH);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(toSave, null, 2) + '\n', 'utf-8');
+  writeFileSync(CONFIG_PATH, JSON.stringify(toSave, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
+  // mode in writeFileSync only applies on creation; chmod for the in-place rewrite case.
+  try { chmodSync(CONFIG_PATH, 0o600); } catch { /* non-POSIX or read-only fs */ }
   _config = toSave;
 }
 
@@ -128,7 +130,8 @@ export function persistConfig(config: AouoConfig): void {
   try {
     const dir = dirname(CONFIG_PATH);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
+    try { chmodSync(CONFIG_PATH, 0o600); } catch { /* non-POSIX or read-only fs */ }
   } catch {
     // Intentionally silent — in-memory config still works.
   }

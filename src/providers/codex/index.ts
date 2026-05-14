@@ -10,7 +10,7 @@ import type { Message, LLMResponse, ToolParameterSchema, LLMProvider, ChatOption
 import type { AouoConfig } from '../../config/defaults.js';
 import { getCodexAccessToken, forceRefreshCodexToken } from '../../lib/auth.js';
 import { classifyApiError } from '../../agent/errorClassifier.js';
-import { logger } from '../../lib/logger.js';
+import { logger, redactSecrets } from '../../lib/logger.js';
 import { toResponsesInput, toResponsesTools } from './transform.js';
 import { consumeStream } from './stream.js';
 
@@ -101,14 +101,15 @@ export class CodexProvider implements LLMProvider {
 
       if (!response.ok) {
         const errText = await response.text();
-        const apiErr = new Error(`Codex API error (${response.status}): ${errText.substring(0, 500)}`);
+        const safeBody = redactSecrets(errText.substring(0, 200));
+        const apiErr = new Error(`Codex API error (${response.status}): ${redactSecrets(errText.substring(0, 500))}`);
         const classified = classifyApiError(apiErr);
 
         logger.error({
           msg: 'api_error', provider: 'codex',
           status: response.status, reason: classified.reason,
           retryable: classified.retryable,
-          body: errText.substring(0, 200),
+          body: safeBody,
           elapsed_ms: Date.now() - startTime, attempt,
         });
 

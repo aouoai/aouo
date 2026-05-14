@@ -82,6 +82,39 @@ export function getPackDbPath(packName: string): string {
   return join(STORE_DIR, `${packName}.db`);
 }
 
+// ── extends_columns SQL Safety ──────────────────────────────────────────────
+
+/**
+ * Identifier guard: alphanumeric + underscore, must start with letter/underscore.
+ * Applied to table and column names before they are interpolated into DDL.
+ */
+const SAFE_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+/**
+ * Column type whitelist for `extends_columns`. Matches one of the five
+ * SQLite affinity types, optionally followed by `NOT NULL` and an optional
+ * `DEFAULT <literal>` where the literal is a number, single/double-quoted
+ * string, or NULL. Everything else is rejected to keep manifest-supplied
+ * strings out of `ALTER TABLE` DDL.
+ */
+const SAFE_COL_TYPE_RE =
+  /^(TEXT|INTEGER|REAL|BLOB|NUMERIC)(\s+NOT\s+NULL)?(\s+DEFAULT\s+(-?\d+(\.\d+)?|'[^']*'|"[^"]*"|NULL))?$/i;
+
+function assertSafeIdent(kind: 'table' | 'column', value: string): void {
+  if (!SAFE_IDENT_RE.test(value)) {
+    throw new Error(`extends_columns: invalid ${kind} identifier "${value}"`);
+  }
+}
+
+function assertSafeColType(colName: string, colType: string): void {
+  if (!SAFE_COL_TYPE_RE.test(colType.trim())) {
+    throw new Error(
+      `extends_columns: invalid column type "${colType}" for "${colName}". ` +
+        `Allowed: TEXT|INTEGER|REAL|BLOB|NUMERIC, optional NOT NULL, optional DEFAULT <literal>.`,
+    );
+  }
+}
+
 /**
  * Applies `extends_columns` declarations from a pack manifest.
  *
@@ -100,6 +133,8 @@ export function runExtendsColumns(
     if (!columns || Object.keys(columns).length === 0) continue;
 
     try {
+      assertSafeIdent('table', table);
+
       // Use the pack's own database
       const dbPath = getPackDbPath(packName);
       const db = new Database(dbPath);
@@ -112,6 +147,8 @@ export function runExtendsColumns(
 
       for (const [colName, colType] of Object.entries(columns)) {
         if (!existingSet.has(colName)) {
+          assertSafeIdent('column', colName);
+          assertSafeColType(colName, colType);
           db.exec(`ALTER TABLE ${table} ADD COLUMN ${colName} ${colType}`);
           logger.info({
             msg: 'extends_column_added',

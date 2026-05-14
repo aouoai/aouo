@@ -11,7 +11,7 @@
 import type { Message, LLMResponse, ToolParameterSchema, LLMProvider, ChatOptions } from '../../agent/types.js';
 import type { AouoConfig } from '../../config/defaults.js';
 import { classifyApiError } from '../../agent/errorClassifier.js';
-import { logger } from '../../lib/logger.js';
+import { logger, redactSecrets } from '../../lib/logger.js';
 
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1';
 
@@ -234,14 +234,15 @@ export class DeepSeekProvider implements LLMProvider {
 
       if (!response.ok) {
         const errText = await response.text();
-        const apiErr = new Error(`DeepSeek API error (${response.status}): ${errText.substring(0, 500)}`);
+        const safeBody = redactSecrets(errText.substring(0, 200));
+        const apiErr = new Error(`DeepSeek API error (${response.status}): ${redactSecrets(errText.substring(0, 500))}`);
         const classified = classifyApiError(apiErr);
 
         logger.error({
           msg: 'api_error', provider: 'deepseek',
           status: response.status, reason: classified.reason,
           retryable: classified.retryable,
-          body: errText.substring(0, 200),
+          body: safeBody,
           elapsed_ms: Date.now() - startTime, attempt,
         });
 
