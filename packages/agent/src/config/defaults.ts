@@ -97,6 +97,14 @@ export interface AouoConfig {
     bot_token: string;
     /** Telegram user IDs allowed to interact. Empty = allow all (dev only). */
     allowed_user_ids: number[];
+    /**
+     * Adaptive inbound text-message batching window. When the user fires
+     * multiple short messages in quick succession we hold them for this
+     * many milliseconds and combine them into a single agent invocation
+     * (one LLM call instead of N). Set 0 to disable batching entirely.
+     * Voice / photo / command inputs are never batched.
+     */
+    message_batch_ms?: number;
   };
 
   /** Cron scheduler settings. */
@@ -231,6 +239,7 @@ export const DEFAULT_CONFIG: AouoConfig = {
     enabled: false,
     bot_token: '',
     allowed_user_ids: [],
+    message_batch_ms: 250,
   },
 
   cron: {

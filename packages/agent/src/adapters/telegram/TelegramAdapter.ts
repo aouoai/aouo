@@ -129,6 +129,22 @@ export class TelegramAdapter {
    * and silently brick every subsequent message for that route.
    */
   private static readonly QUEUE_TASK_TIMEOUT_MS = 5 * 60 * 1000;
+
+  /**
+   * Pending inbound text batches keyed by {@link routeKey}. When the user
+   * fires several short messages in quick succession we hold them here
+   * for `config.telegram.message_batch_ms` and combine them into one
+   * agent invocation. Long messages (> SHORT_MESSAGE_THRESHOLD) flush
+   * immediately so chatty single-line bursts merge but a deliberate
+   * paragraph isn't artificially delayed.
+   */
+  private messageBatcher = new Map<string, {
+    texts: string[];
+    ctx: Context;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  /** Below this length, a text message is considered "short" and gets batched. */
+  private static readonly SHORT_MESSAGE_THRESHOLD = 80;
   /** Active quiz polls for answer correlation. */
   activePolls = new Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>();
   /** In-memory paginated message store for client-side page flipping. */
@@ -152,6 +168,73 @@ export class TelegramAdapter {
    */
   private routeKey(chatId: number, threadId?: number): string {
     return threadId ? `${chatId}:${threadId}` : String(chatId);
+  }
+
+  /**
+   * Coalesce rapid-fire text messages into a single agent invocation so
+   * a user hammering "你好" / "在吗" / "测试一下" only triggers ONE LLM
+   * call. Long messages (≥ {@link SHORT_MESSAGE_THRESHOLD}) flush
+   * immediately — they're typically a complete thought.
+   *
+   * Batching is per-route (so cross-topic messages don't merge) and
+   * runs entirely upstream of {@link enqueuePerChat}; once the batch
+   * fires it goes through the normal queue/handler chain unchanged.
+   *
+   * Set `config.telegram.message_batch_ms = 0` (or undefined) to
+   * disable.
+   */
+  private batchTextMessage(ctx: Context, text: string): void {
+    const windowMs = this.config.telegram.message_batch_ms ?? 0;
+    if (windowMs <= 0) {
+      // Batching disabled — dispatch immediately.
+      this.enqueuePerChat(ctx.chat!.id, () => this.handleIncoming(ctx, text), extractThreadId(ctx));
+      return;
+    }
+
+    // Long messages bypass batching: they're deliberate, not chatter.
+    if (text.length >= TelegramAdapter.SHORT_MESSAGE_THRESHOLD) {
+      const existing = this.messageBatcher.get(this.routeKey(ctx.chat!.id, extractThreadId(ctx)));
+      if (existing) {
+        // Drain whatever's queued ahead, then this long message goes through.
+        clearTimeout(existing.timer);
+        const combined = [...existing.texts, text].join('\n');
+        this.messageBatcher.delete(this.routeKey(ctx.chat!.id, extractThreadId(ctx)));
+        this.enqueuePerChat(ctx.chat!.id, () => this.handleIncoming(existing.ctx, combined), extractThreadId(existing.ctx));
+        return;
+      }
+      this.enqueuePerChat(ctx.chat!.id, () => this.handleIncoming(ctx, text), extractThreadId(ctx));
+      return;
+    }
+
+    const key = this.routeKey(ctx.chat!.id, extractThreadId(ctx));
+    const existing = this.messageBatcher.get(key);
+    if (existing) {
+      // Append to the open batch and slide the timer forward so the
+      // window resets after the latest message — gives the user the
+      // full pause-detection budget after each keystroke-burst.
+      existing.texts.push(text);
+      existing.ctx = ctx;
+      clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => this.flushBatch(key), windowMs);
+      return;
+    }
+
+    const entry = {
+      texts: [text],
+      ctx,
+      timer: setTimeout(() => this.flushBatch(key), windowMs),
+    };
+    this.messageBatcher.set(key, entry);
+  }
+
+  /** Pop the named batch (if any) and feed it into the per-route queue. */
+  private flushBatch(key: string): void {
+    const entry = this.messageBatcher.get(key);
+    if (!entry) return;
+    this.messageBatcher.delete(key);
+    const combined = entry.texts.join('\n');
+    const tid = extractThreadId(entry.ctx);
+    this.enqueuePerChat(entry.ctx.chat!.id, () => this.handleIncoming(entry.ctx, combined), tid);
   }
 
   /**
@@ -734,7 +817,11 @@ export class TelegramAdapter {
         userId: ctx.from?.id,
         text: ctx.message.text.substring(0, 100),
       });
-      this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, ctx.message.text), extractThreadId(ctx));
+      // Inbound text goes through the adaptive batcher so a flurry of
+      // short messages collapses into a single agent invocation.
+      // Voice / photo / commands skip batching — they're structured
+      // inputs where merging would lose meaning.
+      this.batchTextMessage(ctx, ctx.message.text);
     });
 
     // ── Voice message handler ──
