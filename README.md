@@ -4,12 +4,12 @@
 
 > 🚧 **Status: pre-alpha** · API & Pack ABI may change without deprecation notice. Not yet recommended for shared / multi-tenant deployments. Public npm releases will start at `0.x-alpha` once the safety baseline (cost limits, credential hardening, pack permission enforcement) lands. Track progress in [todo/MVP-REMEDIATION.md](todo/MVP-REMEDIATION.md).
 
+> **npm package name request:** `aouo` is the requested canonical npm package name for this open-source project, with `aouo` also remaining the CLI command. The package may still appear as `@aouo/agent` in pre-alpha source/workspace metadata during the transition.
+
 [![CI](https://github.com/aouoai/aouo/actions/workflows/ci.yml/badge.svg)](https://github.com/aouoai/aouo/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 
-<!-- The npm badge will return once @aouo/agent@0.x-alpha is published. -->
-<!-- [![npm](https://img.shields.io/npm/v/@aouo/agent)](https://www.npmjs.com/package/@aouo/agent) -->
 
 
 aouo is an open-source runtime for building **vertical agent apps**: long-running AI companions that understand one domain deeply, keep durable state, run scheduled workflows, and improve through structured data feedback.
@@ -56,7 +56,7 @@ Every serious vertical agent app should have all five:
          └─────────┼──────────┘
                    │ depends on
           ┌────────▼────────┐
-          │   @aouo/agent    │  ← App OS
+          │      aouo        │  ← App OS
           │  Agent runtime  │
           │  Pack loader    │
           │  Persist layer  │
@@ -75,7 +75,7 @@ Every serious vertical agent app should have all five:
 
 ```bash
 # Install the alpha CLI from npm.
-pnpm add -g @aouo/agent@next
+pnpm add -g aouo@next
 
 # Initialize data directory
 aouo init
