@@ -4,7 +4,7 @@ Get your first aouo agent running in under 5 minutes.
 
 ## Prerequisites
 
-- **Node.js 22+** — aouo uses native SQLite (`node:sqlite`) and ESM
+- **Node.js 22+** — aouo uses ESM and SQLite via `better-sqlite3`
 - **A Telegram Bot Token** — create one via [@BotFather](https://t.me/botfather)
 - **A Gemini API Key** — get one from [Google AI Studio](https://aistudio.google.com/apikey)
 
@@ -13,11 +13,11 @@ Get your first aouo agent running in under 5 minutes.
 ::: code-group
 
 ```bash [npm]
-npm install -g aouo
+npm install -g @aouo/core
 ```
 
 ```bash [pnpm]
-pnpm add -g aouo
+pnpm add -g @aouo/core
 ```
 
 :::
@@ -35,22 +35,34 @@ This creates `~/.aouo/` with:
 ├── config.json          # API keys, preferences
 ├── SOUL.md              # Agent identity (core-owned)
 ├── RULES.md             # Operating rules (core-owned)
-└── packs/               # Installed packs go here
+├── packs/               # Installed or linked pack sources
+└── data/packs/          # Mutable pack memory/state
 ```
 
 ## 3. Configure
 
-Edit `~/.aouo/config.json`:
+Use the guided config commands:
+
+```bash
+aouo config provider
+aouo config tools
+aouo config channels
+```
+
+Or edit `~/.aouo/config.json` directly:
 
 ```json
 {
   "version": "0.1.0",
-  "llm": {
-    "provider": "gemini",
-    "model": "gemini-2.5-flash",
-    "api_key": "YOUR_GEMINI_API_KEY"
+  "provider": {
+    "backend": "gemini",
+    "model": "gemini-2.5-flash"
+  },
+  "gemini": {
+    "api_key": "paste-your-gemini-key-here"
   },
   "telegram": {
+    "enabled": true,
     "bot_token": "YOUR_BOT_TOKEN",
     "allowed_user_ids": [YOUR_TELEGRAM_USER_ID]
   }
@@ -69,18 +81,20 @@ aouo gateway start
 
 Your bot is now running! Open Telegram and send it a message.
 
-Without any packs installed, aouo is a general-purpose assistant with persistence and scheduling. Install a pack to give it domain expertise.
+Without any packs loaded, aouo is a general-purpose runtime shell with persistence and scheduling. Add a pack to give it vertical app behavior.
 
-## 5. Install a Pack
+## 5. Add a Local Pack
 
 ```bash
-aouo install aouoai/english    # English learning companion
+aouo pack validate ./packs/notes
+aouo pack link ./packs/notes
+aouo pack list
 ```
 
-Restart the gateway and your agent now has 27+ English learning skills — dictation, shadowing, vocabulary SRS, and more.
+Phase 1 intentionally uses local pack linking. `aouo install` comes later, after the Pack ABI and `.aouo` package format are stable.
 
 ## What's Next?
 
 - [Architecture](/concepts/architecture) — How the core + pack system works
-- [Five Pillars](/concepts/five-pillars) — What makes a Domain Companion
+- [Five Pillars](/concepts/five-pillars) — What makes a vertical agent app
 - [Build a Pack](/build-a-pack/first-pack) — Create your own companion

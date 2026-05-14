@@ -8,7 +8,7 @@ const testDir = mkdtempSync(join(tmpdir(), 'aouo-test-'));
 process.env['AOUO_HOME'] = testDir;
 
 describe('lib/paths', () => {
-  // Dynamic import to pick up the env override
+  // Dynamic import to pick up AOUO_HOME for path selection.
   let paths: typeof import('../../src/lib/paths.js');
 
   beforeEach(async () => {
@@ -29,16 +29,17 @@ describe('lib/paths', () => {
     expect(paths.SOUL_PATH).toContain(testDir);
     expect(paths.RULES_PATH).toContain(testDir);
     expect(paths.DB_PATH).toContain(testDir);
+    expect(paths.PACKS_DIR).toContain(testDir);
     expect(paths.PACKS_DATA_DIR).toContain(testDir);
   });
 
   it('should build pack data paths correctly', () => {
     const userPath = paths.packDataPath('english', 'USER.md');
-    expect(userPath).toBe(join(testDir, 'packs', 'english', 'USER.md'));
+    expect(userPath).toBe(join(testDir, 'data', 'packs', 'english', 'USER.md'));
   });
 
   it('should build pack data dir correctly', () => {
     const dir = paths.packDataDir('fitness');
-    expect(dir).toBe(join(testDir, 'packs', 'fitness'));
+    expect(dir).toBe(join(testDir, 'data', 'packs', 'fitness'));
   });
 });

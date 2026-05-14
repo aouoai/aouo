@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   register,
-  getAllTools,
+  registerAllTools,
   getToolSchemas,
   dispatch,
   listToolsWithStatus,
@@ -51,6 +51,15 @@ const slowTool: ToolDefinition = {
 };
 
 describe('tools/registry (integration)', () => {
+  it('should expand the file tool group into concrete file tools', async () => {
+    await registerAllTools();
+    const schemas = getToolSchemas(DEFAULT_CONFIG as AouoConfig, 'telegram');
+
+    expect(schemas.some(s => s.name === 'read_file')).toBe(true);
+    expect(schemas.some(s => s.name === 'write_file')).toBe(true);
+    expect(schemas.some(s => s.name === 'list_dir')).toBe(true);
+  });
+
   it('should register and dispatch a custom tool', async () => {
     register(echoTool);
     const result = await dispatch('test_echo', { message: 'hello' }, makeContext());
@@ -86,21 +95,67 @@ describe('tools/registry (integration)', () => {
     expect(entry!.pack).toBe('test-pack');
   });
 
-  it('should filter tools by platform', () => {
-    register(echoTool); // ensure it exists
+  it('should expose pack tools without adding them to global enabled tools', () => {
+    const packTool: ToolDefinition = {
+      name: 'pack_auto_enabled_tool',
+      description: 'A pack tool available when the pack is loaded',
+      parameters: { type: 'object', properties: {} },
+      async execute() { return 'pack result'; },
+    };
+
+    registerPackTools('test-pack', [packTool]);
     const config = { ...DEFAULT_CONFIG } as AouoConfig;
+    expect(config.tools.enabled).not.toContain('pack_auto_enabled_tool');
+
+    const schemas = getToolSchemas(config, 'telegram');
+    expect(schemas.some(s => s.name === 'pack_auto_enabled_tool')).toBe(true);
+  });
+
+  it('should filter tools by platform', () => {
+    const telegramOnlyTool: ToolDefinition = {
+      name: 'telegram_only_test_tool',
+      platforms: ['telegram'],
+      description: 'Only works on Telegram',
+      parameters: { type: 'object', properties: {} },
+      async execute() { return 'telegram only'; },
+    };
+
+    register(telegramOnlyTool);
+    const config = {
+      ...DEFAULT_CONFIG,
+      tools: {
+        ...DEFAULT_CONFIG.tools,
+        enabled: [...DEFAULT_CONFIG.tools.enabled, 'telegram_only_test_tool'],
+      },
+    } as AouoConfig;
 
     const tgSchemas = getToolSchemas(config, 'telegram');
     const cliSchemas = getToolSchemas(config, 'cli');
 
-    // tg_msg should be in telegram but not cli
-    const _hasTgMsgTg = tgSchemas.some(s => s.name === 'tg_msg');
-    const hasTgMsgCli = cliSchemas.some(s => s.name === 'tg_msg');
+    expect(tgSchemas.some(s => s.name === 'telegram_only_test_tool')).toBe(true);
+    expect(cliSchemas.some(s => s.name === 'telegram_only_test_tool')).toBe(false);
+  });
 
-    // Only check if tg_msg is registered (it may not be in this test context)
-    if (getAllTools().some(t => t.name === 'tg_msg')) {
-      expect(hasTgMsgCli).toBe(false);
-    }
+  it('should reject dispatching a platform-limited tool on the wrong adapter', async () => {
+    const telegramOnlyTool: ToolDefinition = {
+      name: 'telegram_only_dispatch_tool',
+      platforms: ['telegram'],
+      description: 'Only works on Telegram',
+      parameters: { type: 'object', properties: {} },
+      async execute() { return 'telegram only'; },
+    };
+
+    register(telegramOnlyTool);
+    const result = await dispatch('telegram_only_dispatch_tool', {}, makeContext({
+      adapter: {
+        platform: 'cli',
+        reply: async () => {},
+        requestApproval: async () => 'deny' as const,
+      },
+    }));
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('not available on platform "cli"');
   });
 
   it('should apply deny policy', () => {

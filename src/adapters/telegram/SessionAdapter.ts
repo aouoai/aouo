@@ -12,13 +12,17 @@
  * - First content message auto-replies to the user (smart reply).
  * - A single "status" message is created then edited in-place during tool execution.
  * - `hasSentContent` prevents the Agent from double-sending its final reply
- *   when a tool (e.g., tg_msg) already delivered content to the user.
+ *   when a message tool already delivered content to the user.
  */
 
 import { isAbsolute } from 'node:path';
 import { Bot, InlineKeyboard, InputFile, type Context } from 'grammy';
 import PQueue from 'p-queue';
-import type { Adapter } from '../../agent/types.js';
+import type {
+  Adapter,
+  AdapterMessagePayload,
+  AdapterMessageResult,
+} from '../../agent/types.js';
 import { logger } from '../../lib/logger.js';
 import { splitMarkdownForTelegram } from './markdown.js';
 import type { SendMessageOptions, PendingApproval, PendingChoice } from './types.js';
@@ -34,7 +38,8 @@ const TOOL_LABELS: Record<string, string> = {
   memory: '🧠 Updating memory',
   skill_view: '🎓 Loading skill',
   clarify: '💬 Asking question',
-  tg_msg: '',          // suppress — the message itself arrives immediately
+  msg: '',             // suppress — the message itself arrives immediately
+  tg_msg: '',          // legacy alias for msg
   tts: '🔊 Generating audio',
   db: '🗄️ Querying database',
   persist: '💾 Saving data',
@@ -91,7 +96,7 @@ export class TelegramSessionAdapter implements Adapter {
   private statusMessageId?: number;
   private statusText = '🧠 Thinking...';
 
-  /** True once any tg_msg tool sends content. Used to skip duplicate final reply. */
+  /** True once any message tool sends content. Used to skip duplicate final reply. */
   private hasSentContent = false;
 
   /** True after the first content message replies to the user's incoming message. */
@@ -171,7 +176,7 @@ export class TelegramSessionAdapter implements Adapter {
    * - Converts markdown to Telegram HTML.
    * - Falls back to stripped plain text if HTML parsing fails.
    * - Splits long messages at safe boundaries (paragraph > line > space).
-   * - Skips if tg_msg tool already sent content (dedup).
+   * - Skips if a message tool already sent content (dedup).
    */
   async reply(content: string): Promise<void> {
     await this.outboundQueue.onIdle();
@@ -213,7 +218,7 @@ export class TelegramSessionAdapter implements Adapter {
   /** Updates status to reflect the current tool being executed. */
   showToolCall(toolName: string, _args: Record<string, unknown>): void {
     const label = TOOL_LABELS[toolName];
-    if (label === '') return;                    // suppress for tg_msg etc.
+    if (label === '') return;                    // suppress for message tools
     this.statusText = `${label || `⚙️ ${toolName}`}...`;
     this.enqueue(() => this.flushStatus());
   }
@@ -306,8 +311,127 @@ export class TelegramSessionAdapter implements Adapter {
 
   // ── Telegram-Specific Capabilities ─────────────────────────────────────────
   //
-  // These methods are called by the `tg_msg` tool via duck-typing.
-  // All are enqueued for strict ordering and set hasSentContent.
+  // Message intents enter through dispatchMessage(). The helper methods below
+  // are Telegram-specific implementations and all go through the outbound queue.
+
+  async dispatchMessage(message: AdapterMessagePayload): Promise<AdapterMessageResult> {
+    switch (message.type) {
+      case 'text': {
+        const msgId = await this.sendMessage(message.text || '', {
+          replyTo: message.replyTo,
+          tag: message.tag,
+          parseMode: message.parseMode as SendMessageOptions['parseMode'],
+        });
+        return { ok: true, messageId: msgId, sentContent: true };
+      }
+
+      case 'audio':
+      case 'voice': {
+        if (!message.url) return { ok: false, error: 'url is required', sentContent: false };
+        const msgId = message.type === 'audio'
+          ? await this.sendAudio(message.url, message.text, {
+            replyTo: message.replyTo,
+            tag: message.tag,
+            parseMode: message.parseMode as SendMessageOptions['parseMode'],
+          })
+          : await this.sendVoice(message.url, message.text, {
+            replyTo: message.replyTo,
+            tag: message.tag,
+            parseMode: message.parseMode as SendMessageOptions['parseMode'],
+          });
+        return { ok: true, messageId: msgId, sentContent: true };
+      }
+
+      case 'document': {
+        if (!message.url) return { ok: false, error: 'url is required', sentContent: false };
+        const msgId = await this.sendDocument(message.url, {
+          caption: message.text,
+          replyTo: message.replyTo,
+          tag: message.tag,
+          parseMode: message.parseMode,
+        });
+        return { ok: msgId !== null, messageId: msgId, sentContent: msgId !== null };
+      }
+
+      case 'keyboard': {
+        if (message.url) {
+          await this.sendVoice(message.url, undefined, {});
+        }
+        const msgId = await this.sendKeyboard(message.text || '', message.buttons || [], {
+          replyTo: message.replyTo,
+          tag: message.tag,
+        });
+        return { ok: true, messageId: msgId, sentContent: true };
+      }
+
+      case 'quiz': {
+        const result = await this.sendQuiz(
+          message.text || '',
+          message.options || [],
+          message.correct ?? 0,
+          message.explanation,
+        );
+        return {
+          ok: true,
+          messageId: result.messageId,
+          pollId: result.pollId,
+          sentContent: true,
+        };
+      }
+
+      case 'edit': {
+        if (message.messageId === undefined) {
+          return { ok: false, error: 'message_id is required', sentContent: false };
+        }
+        await this.editMessage(message.messageId, message.text || '', message.buttons);
+        return { ok: true, sentContent: false };
+      }
+
+      case 'delete': {
+        if (message.messageId === undefined) {
+          return { ok: false, error: 'message_id is required', sentContent: false };
+        }
+        const deleted = await this.deleteMsg(message.messageId);
+        return { ok: deleted, sentContent: false };
+      }
+
+      case 'react': {
+        if (message.messageId === undefined) {
+          return { ok: false, error: 'message_id is required', sentContent: false };
+        }
+        await this.react(message.messageId, message.emoji || '👍');
+        return { ok: true, sentContent: false };
+      }
+
+      case 'action': {
+        await this.sendChatAction(message.action || 'typing');
+        return { ok: true, sentContent: false };
+      }
+
+      case 'countdown': {
+        const msgId = await this.sendCountdown(
+          message.text || '',
+          message.seconds || 60,
+          message.expireText || 'Time is up.',
+          { replyTo: message.replyTo, tag: message.tag },
+        );
+        return { ok: true, messageId: msgId, sentContent: true };
+      }
+
+      case 'paginate': {
+        const pages = (message.text || '').split('---PAGE---').map(page => page.trim());
+        const msgId = await this.sendPaginate(
+          pages,
+          JSON.stringify(message.buttons || []),
+          { replyTo: message.replyTo, tag: message.tag },
+        );
+        return { ok: true, messageId: msgId, pageCount: pages.length, sentContent: true };
+      }
+
+      default:
+        return { ok: false, error: `Unsupported message type: ${message.type}`, sentContent: false };
+    }
+  }
 
   /** Send a text message with optional parse mode. */
   async sendMessage(text: string, opts?: SendMessageOptions): Promise<number> {

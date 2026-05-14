@@ -31,6 +31,44 @@ const CustomToolSchema = z.object({
   path: z.string().min(1),
 });
 
+const PermissionsSchema = z
+  .object({
+    files: z.array(z.string()).default([]),
+    network: z.array(z.string()).default([]),
+    platforms: z.array(z.string()).default([]),
+    cron: z.boolean().default(false),
+    external_commands: z.array(z.string()).default([]),
+  })
+  .default({
+    files: [],
+    network: [],
+    platforms: [],
+    cron: false,
+    external_commands: [],
+  });
+
+const ExternalToolSchema = z.object({
+  name: z.string().min(1),
+  command: z.string().min(1),
+  input: z.literal('json').default('json'),
+  output: z.literal('json').default('json'),
+  permissions: z.array(z.string()).default([]),
+});
+
+const RuntimeSchema = z
+  .object({
+    js: z
+      .object({
+        tools: z.boolean().default(true),
+      })
+      .default({ tools: true }),
+    external_tools: z.array(ExternalToolSchema).default([]),
+  })
+  .default({
+    js: { tools: true },
+    external_tools: [],
+  });
+
 const PackManifestSchema = z.object({
   name: z
     .string()
@@ -70,6 +108,8 @@ const PackManifestSchema = z.object({
 
   cron_defaults: z.array(CronDefaultSchema).default([]),
   custom_tools: z.array(CustomToolSchema).default([]),
+  permissions: PermissionsSchema,
+  runtime: RuntimeSchema,
 });
 
 /**

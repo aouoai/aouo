@@ -2,8 +2,8 @@
  * @module packs/types
  * @description Type definitions for the aouo pack system.
  *
- * A Pack is a "Skill Bundle + Plugin" hybrid — it bundles user-facing
- * skills with runtime extensions (tools, DB schema, cron, memory state).
+ * A Pack is a vertical agent app: it bundles user-facing workflows
+ * with runtime extensions, data schema, cron jobs, and memory state.
  */
 
 /**
@@ -65,6 +65,12 @@ export interface PackManifest {
 
   /** Domain-specific tools provided by this pack. */
   custom_tools: CustomToolDeclaration[];
+
+  /** Capabilities this pack asks the runtime to grant. */
+  permissions: PackPermissions;
+
+  /** Runtime requirements for pack tools and external integrations. */
+  runtime: PackRuntime;
 }
 
 /** A dependency on another pack. */
@@ -95,6 +101,45 @@ export interface CustomToolDeclaration {
   path: string;
 }
 
+/** Capability declarations for pack review and future install prompts. */
+export interface PackPermissions {
+  /** File paths the pack needs to access. */
+  files: string[];
+  /** Network origins or services the pack needs. */
+  network: string[];
+  /** Platform accounts or channels the pack integrates with. */
+  platforms: string[];
+  /** Whether the pack wants to register scheduled jobs. */
+  cron: boolean;
+  /** External command names this pack may invoke through a declared protocol. */
+  external_commands: string[];
+}
+
+/** Runtime declarations for first-class JS tools and future external tools. */
+export interface PackRuntime {
+  /** JavaScript/TypeScript runtime settings. */
+  js: {
+    /** Whether JS/TS tools are enabled for this pack. */
+    tools: boolean;
+  };
+  /** Future non-JS tools invoked through explicit JSON I/O protocol. */
+  external_tools: ExternalToolDeclaration[];
+}
+
+/** Declared external tool protocol for Python or other runtimes. */
+export interface ExternalToolDeclaration {
+  /** Tool name. */
+  name: string;
+  /** Command to execute when the runtime supports external tools. */
+  command: string;
+  /** Input protocol. */
+  input: 'json';
+  /** Output protocol. */
+  output: 'json';
+  /** Optional permission references this external tool consumes. */
+  permissions: string[];
+}
+
 /**
  * A fully loaded pack instance at runtime.
  *
@@ -106,7 +151,7 @@ export interface LoadedPack {
   manifest: PackManifest;
   /** Absolute path to the pack's source directory. */
   sourcePath: string;
-  /** Absolute path to the pack's runtime data directory (~/.aouo/packs/<name>/). */
+  /** Absolute path to the pack's runtime data directory (~/.aouo/data/packs/<name>/). */
   dataPath: string;
   /** Whether this pack has completed its onboarding flow. */
   onboarded: boolean;

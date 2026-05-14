@@ -97,12 +97,12 @@ export async function transcribeAudio(
   }
 
   // ── API Key ──
-  const apiKey = config.stt.groq_api_key || process.env['GROQ_API_KEY'];
+  const apiKey = config.stt.groq_api_key;
   if (!apiKey) {
     return {
       success: false,
       transcript: '',
-      error: 'Groq API key not configured. Set stt.groq_api_key or GROQ_API_KEY.',
+      error: 'Groq API key not configured. Set stt.groq_api_key in config.json.',
     };
   }
 

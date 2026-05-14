@@ -38,6 +38,8 @@ export interface CronJob {
   id: string;
   name: string;
   prompt: string;
+  pack?: string;
+  skill?: string;
   schedule: CronSchedule;
   enabled: boolean;
   state: 'scheduled' | 'paused' | 'running' | 'completed' | 'error';
@@ -62,6 +64,8 @@ export interface CreateCronJobInput {
   name: string;
   prompt: string;
   schedule: string;
+  pack?: string;
+  skill?: string;
   chat_id?: string;
   repeat_times?: number | null;
   enabled?: boolean;
@@ -132,6 +136,8 @@ export async function createJob(config: AouoConfig, input: CreateCronJobInput): 
     id: randomUUID().replace(/-/g, '').slice(0, 12),
     name: input.name.trim(),
     prompt: input.prompt.trim(),
+    pack: input.pack,
+    skill: input.skill,
     schedule,
     enabled: input.enabled ?? true,
     state: input.enabled === false ? 'paused' : 'scheduled',
@@ -168,6 +174,8 @@ export async function updateJob(config: AouoConfig, id: string, patch: Partial<C
   const job = { ...jobs[idx]! };
   if (patch.name !== undefined) job.name = patch.name.trim();
   if (patch.prompt !== undefined) job.prompt = patch.prompt.trim();
+  if (patch.pack !== undefined) job.pack = patch.pack;
+  if (patch.skill !== undefined) job.skill = patch.skill;
   if (patch.chat_id !== undefined) job.deliver = { platform: 'telegram', chat_id: patch.chat_id };
   if (patch.repeat_times !== undefined) job.repeat = { ...job.repeat, times: patch.repeat_times };
   if (patch.schedule !== undefined) {
@@ -316,22 +324,40 @@ async function runAgentForJob(config: AouoConfig, job: CronJob): Promise<string>
   const { registerAllTools } = await import('../tools/registry.js');
   const { Agent } = await import('../agent/Agent.js');
   const { createProvider } = await import('../providers/index.js');
+  const { getLoadedPacks } = await import('../packs/loader.js');
+  const { buildSkillIndex, getSkill } = await import('../packs/skillRegistry.js');
+  const { createSession, setActiveSkill } = await import('../storage/sessionStore.js');
 
   await registerAllTools();
 
   const adapter = new CronAdapter();
   const provider = createProvider(config);
-  const agent = new Agent(config, adapter as any, provider);
+  const agent = new Agent(config, adapter as any, provider, {
+    packs: getLoadedPacks(),
+    skillIndex: buildSkillIndex(),
+    resolveSkill(name) {
+      const skill = getSkill(name);
+      return skill ? { body: skill.body, pack: skill.pack } : undefined;
+    },
+  });
 
   const prompt = [
     '[SYSTEM: Cron job execution. This is unattended. Do not ask clarifying questions. If there is nothing useful to send, respond exactly with [SILENT].]',
     `[Cron job: ${job.name}]`,
+    job.pack ? `[Pack: ${job.pack}]` : '',
+    job.skill ? `[Skill: ${job.skill}]` : '',
     job.prompt,
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
+
+  const sessionKey = `cron:${job.id}:${Date.now()}`;
+  const sessionId = await createSession(sessionKey);
+  if (job.skill) {
+    await setActiveSkill(sessionId, job.skill);
+  }
 
   const result = await agent.run(prompt, {
-    sessionKey: `cron:${job.id}:${Date.now()}`,
-    newSession: true,
+    sessionKey,
+    sessionId,
     toolPolicy: { deny: ['cron', 'tg_msg', 'clarify'] },
   });
 

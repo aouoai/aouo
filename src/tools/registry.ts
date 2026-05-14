@@ -26,6 +26,10 @@ const toolOwnership = new Map<string, string>();
 
 let coreToolsLoaded = false;
 
+const TOOL_GROUP_ALIASES = new Map<string, string[]>([
+  ['file', ['read_file', 'write_file', 'list_dir']],
+]);
+
 /**
  * Loads and registers all built-in core tools exactly once.
  *
@@ -44,6 +48,7 @@ export async function registerAllTools(): Promise<void> {
     import('../tools/memory.js'),
     import('../tools/skill.js'),
     import('../tools/clarify.js'),
+    import('../tools/message.js'),
     import('../tools/telegram.js'),
     import('../tools/tts.js'),
     import('../tools/db.js'),
@@ -84,6 +89,20 @@ export function registerPackTools(packName: string, packTools: ToolDefinition[])
 }
 
 /**
+ * Removes all tools owned by a pack.
+ *
+ * Used when unloading packs during tests or runtime reloads.
+ */
+export function unregisterPackTools(packName: string): void {
+  for (const [toolName, owner] of [...toolOwnership.entries()]) {
+    if (owner === packName) {
+      tools.delete(toolName);
+      toolOwnership.delete(toolName);
+    }
+  }
+}
+
+/**
  * Gets all registered tools regardless of enablement.
  *
  * @returns Array of all tool definitions.
@@ -99,9 +118,21 @@ export function getAllTools(): ToolDefinition[] {
  * @returns Array of enabled tool definitions, in config order.
  */
 export function getEnabledTools(config: AouoConfig): ToolDefinition[] {
-  return config.tools.enabled
+  const enabledNames = config.tools.enabled.flatMap((name) => TOOL_GROUP_ALIASES.get(name) ?? [name]);
+  const configured = enabledNames
     .map((name) => tools.get(name))
     .filter((t): t is ToolDefinition => t !== undefined);
+  const names = new Set(configured.map((tool) => tool.name));
+
+  for (const [toolName] of toolOwnership) {
+    const tool = tools.get(toolName);
+    if (tool && !names.has(tool.name)) {
+      configured.push(tool);
+      names.add(tool.name);
+    }
+  }
+
+  return configured;
 }
 
 /**
@@ -109,9 +140,9 @@ export function getEnabledTools(config: AouoConfig): ToolDefinition[] {
  *
  * Filtering layers (in order):
  * 1. `config.tools.enabled` — global enabled list
- * 2. Platform — `tg_msg` only for 'telegram'
+ * 2. Tool platform allowlists
  * 3. `toolPolicy.deny` — per-run blacklist
- * 4. `toolPolicy.allow` — per-run whitelist (overrides all above)
+ * 4. `toolPolicy.allow` — per-run whitelist over the remaining tools
  *
  * @param config - Agent configuration.
  * @param platform - Adapter platform (e.g., 'telegram', 'cli').
@@ -125,10 +156,7 @@ export function getToolSchemas(
 ): Array<{ name: string; description: string; parameters: ToolParameterSchema }> {
   let enabled = getEnabledTools(config);
 
-  // Platform filter: tg_msg only for telegram
-  if (platform !== 'telegram') {
-    enabled = enabled.filter((t) => t.name !== 'tg_msg');
-  }
+  enabled = enabled.filter((tool) => !tool.platforms || tool.platforms.includes(platform));
 
   // ToolPolicy: deny list
   if (toolPolicy?.deny?.length) {
@@ -136,7 +164,7 @@ export function getToolSchemas(
     enabled = enabled.filter((t) => !denySet.has(t.name));
   }
 
-  // ToolPolicy: allow list (overrides everything above)
+  // ToolPolicy: allow list narrows the platform-safe tool set.
   if (toolPolicy?.allow?.length) {
     const allowSet = new Set(toolPolicy.allow);
     enabled = enabled.filter((t) => allowSet.has(t.name));
@@ -175,6 +203,14 @@ export async function dispatch(
   const sid = context.sessionId;
   const DEFAULT_TIMEOUT_MS = 30_000;
   const timeoutMs = tool.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const platform = context.adapter.platform;
+
+  if (tool.platforms && !tool.platforms.includes(platform)) {
+    return {
+      content: `Error: Tool "${toolName}" is not available on platform "${platform}".`,
+      isError: true,
+    };
+  }
 
   try {
     logger.info({ msg: 'tool_call', tool: toolName, sessionId: sid, args });

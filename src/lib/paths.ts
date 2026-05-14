@@ -11,14 +11,15 @@
  * ├── config.json                  Runtime configuration
  * ├── SOUL.md                      Agent persona (core-owned)
  * ├── RULES.md                     Behavioral rules (core-owned)
- * ├── packs/                       Pack-scoped data
- * │   └── <pack>/
- * │       ├── USER.md              Pack-owned user profile
- * │       ├── MEMORY.md            Pack-owned learner state
- * │       └── data/                Pack-owned databases
+ * ├── packs/                       Installed or linked pack sources
  * ├── data/
+ * │   ├── packs/
+ * │   │   └── <pack>/
+ * │   │       ├── USER.md          Pack-owned user profile
+ * │   │       └── MEMORY.md        Pack-owned learner state
  * │   ├── store/
- * │   │   └── state.db             Session histories
+ * │   │   ├── state.db             Session histories
+ * │   │   └── <pack>.db            Pack-owned databases
  * │   ├── audio/                   Voice/TTS artifacts
  * │   └── images/                  Image artifacts
  * ├── logs/                        Structured telemetry
@@ -55,8 +56,8 @@ export const RULES_PATH = join(AOUO_HOME, 'RULES.md');
 
 // ── Packs ────────────────────────────────────────────────────────────────────
 
-/** Root directory for pack-scoped data. */
-export const PACKS_DATA_DIR = join(AOUO_HOME, 'packs');
+/** Root directory for installed or linked pack source directories. */
+export const PACKS_DIR = join(AOUO_HOME, 'packs');
 
 /**
  * Resolves a path within a specific pack's data directory.
@@ -67,8 +68,8 @@ export const PACKS_DATA_DIR = join(AOUO_HOME, 'packs');
  *
  * @example
  * ```typescript
- * packDataPath('english', 'USER.md')   // ~/.aouo/packs/english/USER.md
- * packDataPath('english', 'data/study.db') // ~/.aouo/packs/english/data/study.db
+ * packDataPath('english', 'USER.md')   // ~/.aouo/data/packs/english/USER.md
+ * packDataPath('english', 'artifacts/result.json') // ~/.aouo/data/packs/english/artifacts/result.json
  * ```
  */
 export function packDataPath(packName: string, subpath: string): string {
@@ -93,6 +94,9 @@ export const SKILLS_DIR = join(AOUO_HOME, 'skills');
 
 /** Root data directory for core storage. */
 export const DATA_DIR = join(AOUO_HOME, 'data');
+
+/** Root directory for pack-scoped mutable runtime data. */
+export const PACKS_DATA_DIR = join(DATA_DIR, 'packs');
 
 /** SQLite database root directory. */
 export const STORE_DIR = join(DATA_DIR, 'store');
@@ -143,9 +147,10 @@ export const CRON_OUTPUT_DIR = join(CRON_DIR, 'output');
 export function ensureDirectories(): void {
   const dirs = [
     AOUO_HOME,
-    PACKS_DATA_DIR,
+    PACKS_DIR,
     SKILLS_DIR,
     DATA_DIR,
+    PACKS_DATA_DIR,
     STORE_DIR,
     SEARCH_CACHE_DIR,
     CACHE_DIR,
@@ -176,11 +181,6 @@ export function ensurePackDataDir(packName: string): void {
   const dir = packDataDir(packName);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
-  }
-  // Also ensure the pack's data subdirectory exists
-  const dataSubDir = join(dir, 'data');
-  if (!existsSync(dataSubDir)) {
-    mkdirSync(dataSubDir, { recursive: true });
   }
 }
 

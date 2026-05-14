@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { deepMerge, loadConfig, getConfig, resetConfig } from '../../src/config/loader.js';
+import { deepMerge, loadConfig, getConfig, resetConfig, createDefaultConfig } from '../../src/config/loader.js';
 
 describe('config/loader', () => {
   beforeEach(() => {
@@ -68,11 +68,30 @@ describe('config/loader', () => {
       expect(config.provider.backend).toBe('gemini');
     });
 
-    it('should apply env overrides', () => {
-      process.env.AOUO_LOG_LEVEL = 'debug';
-      const config = loadConfig();
-      expect(config.advanced.log_level).toBe('debug');
-      delete process.env.AOUO_LOG_LEVEL;
+    it('should ignore runtime environment variables', () => {
+      const previousGemini = process.env.GEMINI_API_KEY;
+      const previousDeepSeek = process.env.DEEPSEEK_API_KEY;
+      const previousLogLevel = process.env.AOUO_LOG_LEVEL;
+
+      try {
+        process.env.GEMINI_API_KEY = 'sk-test-gemini';
+        process.env.DEEPSEEK_API_KEY = 'sk-test-deepseek';
+        process.env.AOUO_LOG_LEVEL = 'debug';
+
+        const config = loadConfig();
+
+        expect(config.gemini.api_key).toBe('');
+        expect(config.deepseek.api_key).toBe('');
+        expect(config.advanced.log_level).toBe('info');
+        expect(createDefaultConfig().gemini.api_key).toBe('');
+      } finally {
+        if (previousGemini === undefined) delete process.env.GEMINI_API_KEY;
+        else process.env.GEMINI_API_KEY = previousGemini;
+        if (previousDeepSeek === undefined) delete process.env.DEEPSEEK_API_KEY;
+        else process.env.DEEPSEEK_API_KEY = previousDeepSeek;
+        if (previousLogLevel === undefined) delete process.env.AOUO_LOG_LEVEL;
+        else process.env.AOUO_LOG_LEVEL = previousLogLevel;
+      }
     });
   });
 

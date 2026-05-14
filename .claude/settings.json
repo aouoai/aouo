@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /Users/bolt/agent/aouo/plan && ls -la /Users/bolt/agent/aouo/plan)"
+    ],
+    "additionalDirectories": [
+      "/Users/bolt/agent/aouo"
+    ]
+  }
+}

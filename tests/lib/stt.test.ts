@@ -28,6 +28,8 @@ describe('transcribeAudio validation', () => {
   it('rejects when no API key is configured', async () => {
     // Create a minimal temp file
     const { writeFileSync, unlinkSync } = await import('node:fs');
+    const previousGroq = process.env['GROQ_API_KEY'];
+    process.env['GROQ_API_KEY'] = 'ignored-env-key';
     const path = '/tmp/aouo_test_stt.ogg';
     writeFileSync(path, 'fake');
     try {
@@ -36,6 +38,8 @@ describe('transcribeAudio validation', () => {
       expect(result.error).toContain('API key');
     } finally {
       unlinkSync(path);
+      if (previousGroq === undefined) delete process.env['GROQ_API_KEY'];
+      else process.env['GROQ_API_KEY'] = previousGroq;
     }
   });
 });

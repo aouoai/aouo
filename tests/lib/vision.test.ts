@@ -3,7 +3,7 @@
  * @description Tests for vision module — validation only (no actual API calls).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { analyzeImage } from '../../src/lib/vision.js';
 import { DEFAULT_CONFIG, type AouoConfig } from '../../src/config/defaults.js';
 
@@ -13,27 +13,19 @@ const config: AouoConfig = {
 };
 
 describe('analyzeImage validation', () => {
-  let savedGeminiKey: string | undefined;
-
-  beforeEach(() => {
-    // Ensure no env key interferes
-    savedGeminiKey = process.env['GEMINI_API_KEY'];
-    delete process.env['GEMINI_API_KEY'];
-  });
-
-  afterEach(() => {
-    if (savedGeminiKey !== undefined) process.env['GEMINI_API_KEY'] = savedGeminiKey;
-  });
-
   it('rejects when no API key with existing file', async () => {
     const { writeFileSync, unlinkSync } = await import('node:fs');
     const path = '/tmp/aouo_test_vision_apikey.jpg';
+    const previousGemini = process.env['GEMINI_API_KEY'];
+    process.env['GEMINI_API_KEY'] = 'ignored-env-key';
     writeFileSync(path, 'fake-jpeg-data');
     try {
       const result = await analyzeImage(path, config);
       expect(result.success).toBe(false);
       expect(result.error).toContain('API key');
     } finally {
+      if (previousGemini === undefined) delete process.env['GEMINI_API_KEY'];
+      else process.env['GEMINI_API_KEY'] = previousGemini;
       unlinkSync(path);
     }
   });

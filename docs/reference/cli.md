@@ -10,26 +10,41 @@ Start the Telegram bot in long-polling mode.
 
 ## `aouo config`
 
-Display the active configuration.
+Open the configuration wizard.
+
+```bash
+aouo config provider   # active provider, credentials, model
+aouo config tools      # tool APIs and enabled tool groups
+aouo config channels   # Telegram and cron delivery
+aouo config advanced   # limits, retries, display behavior
+aouo config show       # masked JSON
+aouo config edit       # open ~/.aouo/config.json
+```
 
 ## `aouo doctor`
 
 Check environment health — API keys, Node version, pack integrity.
 
-## `aouo packs`
+## `aouo pack list`
 
 List installed packs and their status.
 
-## `aouo install` <Badge type="warning" text="coming soon" />
+## `aouo pack validate`
 
-Install a pack from GitHub:
+Validate a local pack against the Pack ABI before packaging.
 
 ```bash
-aouo install aouoai/english          # GitHub shorthand
-aouo install github.com/foo/my-pack  # Full URL
-aouo install ./local-pack            # Local path (dev)
+aouo pack validate ./packs/notes
 ```
 
-## `aouo remove` <Badge type="warning" text="coming soon" />
+## `aouo pack link`
 
-Remove an installed pack.
+Validate a local pack and symlink it into `~/.aouo/packs/<name>` for development.
+
+```bash
+aouo pack link ./packs/notes
+```
+
+## `aouo install` <Badge type="warning" text="deferred" />
+
+Local `.aouo` package installation is intentionally deferred until the Pack ABI is stable. Registry installation and paid-pack entitlement checks come after that.

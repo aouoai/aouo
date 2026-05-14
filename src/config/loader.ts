@@ -1,19 +1,28 @@
 /**
  * @module config/loader
- * @description Configuration loading, deep merging, and environment override.
+ * @description Configuration loading and deep merging.
  *
- * Three-layer priority system:
+ * Two-layer priority system:
  * 1. Default values (lowest priority).
  * 2. User-defined JSON (`~/.aouo/config.json`).
- * 3. Environment variables (highest priority).
  *
- * No config migration is needed since this is a fresh codebase.
+ * Runtime settings and secrets intentionally come from config.json only.
+ * `AOUO_HOME` may still select which config file is loaded, but it does not
+ * override values inside the configuration.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { CONFIG_PATH } from '../lib/paths.js';
 import { DEFAULT_CONFIG, type AouoConfig } from './defaults.js';
+
+function cloneConfig(config: AouoConfig): AouoConfig {
+  return structuredClone(config);
+}
+
+export function createDefaultConfig(): AouoConfig {
+  return cloneConfig(DEFAULT_CONFIG);
+}
 
 // ── Deep Merge ───────────────────────────────────────────────────────────────
 
@@ -56,49 +65,14 @@ function deepMerge(
   return result;
 }
 
-// ── Environment Overrides ────────────────────────────────────────────────────
-
-/**
- * Applies environment variable overrides to the configuration.
- *
- * Convention: `AOUO_<SECTION>_<KEY>` in uppercase.
- * Also accepts generic names like `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`.
- *
- * @param config - The configuration object to mutate.
- * @returns The mutated configuration object.
- */
-function applyEnvOverrides(config: AouoConfig): AouoConfig {
-  const envMap: Record<string, (c: AouoConfig, v: string) => void> = {
-    // AOUO-specific prefixes
-    AOUO_GEMINI_API_KEY: (c, v) => { c.gemini.api_key = v; },
-    AOUO_TAVILY_API_KEY: (c, v) => { c.tools.web_search.api_key = v; },
-    AOUO_TELEGRAM_BOT_TOKEN: (c, v) => { c.telegram.bot_token = v; },
-    AOUO_LOG_LEVEL: (c, v) => { c.advanced.log_level = v as AouoConfig['advanced']['log_level']; },
-    AOUO_MODEL: (c, v) => { c.provider.model = v; },
-    AOUO_PROVIDER_BACKEND: (c, v) => { c.provider.backend = v as AouoConfig['provider']['backend']; },
-
-    // Generic env names (common convention)
-    GEMINI_API_KEY: (c, v) => { if (!c.gemini.api_key) c.gemini.api_key = v; },
-    TELEGRAM_BOT_TOKEN: (c, v) => { if (!c.telegram.bot_token) c.telegram.bot_token = v; },
-    OPENAI_API_KEY: (c, v) => { if (!c.gemini.api_key) c.gemini.api_key = v; }, // fallback
-  };
-
-  for (const [envKey, setter] of Object.entries(envMap)) {
-    const value = process.env[envKey];
-    if (value) setter(config, value);
-  }
-
-  return config;
-}
-
 // ── Singleton ────────────────────────────────────────────────────────────────
 
 let _config: AouoConfig | null = null;
 
 /**
- * Loads configuration from file and environment.
+ * Loads configuration from defaults and config.json.
  *
- * Priority: Defaults < File < Environment.
+ * Priority: Defaults < File.
  *
  * @returns The finalized configuration object.
  */
@@ -116,13 +90,12 @@ export function loadConfig(): AouoConfig {
   }
 
   const merged = deepMerge(
-    DEFAULT_CONFIG as unknown as Record<string, unknown>,
+    createDefaultConfig() as unknown as Record<string, unknown>,
     fileConfig as unknown as Record<string, unknown>,
   ) as unknown as AouoConfig;
 
-  const final = applyEnvOverrides(merged);
-  _config = final;
-  return final;
+  _config = merged;
+  return merged;
 }
 
 /**

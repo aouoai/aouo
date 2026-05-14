@@ -74,6 +74,22 @@ cron_defaults:
 custom_tools:
   - name: pronAssess
     path: tools/pronAssess.ts
+
+# Declared capabilities for review and future install prompts
+permissions:
+  files: []
+  network:
+    - "https://api.example.com"
+  platforms:
+    - telegram
+  cron: true
+  external_commands: []
+
+# Runtime requirements
+runtime:
+  js:
+    tools: true
+  external_tools: []
 ```
 
 ## Field Reference
@@ -113,7 +129,7 @@ Two skills are **mandatory** for every pack:
 | `owned_tables` | Tables this pack creates and owns. Core enforces that only this pack accesses them. |
 
 ::: info Data Isolation
-Each pack gets its own database at `~/.aouo/data/<pack-name>.db`. Cross-pack access is forbidden in v0.1.
+Each pack gets its own database at `~/.aouo/data/store/<pack-name>.db`. Cross-pack access is forbidden in v0.1.
 :::
 
 ### `persist_contract`
@@ -146,3 +162,19 @@ Array of pack-specific tool registrations:
 |-------|-------------|
 | `name` | Tool name exposed to the LLM |
 | `path` | Relative path to TypeScript file exporting a `ToolDefinition` |
+
+### `permissions`
+
+Declared capabilities for review, validation, and future install prompts.
+
+| Field | Description |
+|-------|-------------|
+| `files` | File paths the pack needs to access |
+| `network` | Network origins or services the pack needs |
+| `platforms` | Platform accounts/channels the pack integrates with |
+| `cron` | Whether the pack registers scheduled jobs |
+| `external_commands` | External command names requested through the future external-tool protocol |
+
+### `runtime`
+
+Runtime requirements. MVP treats JS/TS tools as first-class. Python and other languages should be declared later through `external_tools` with explicit command, JSON input/output, dependency checks, permissions, and sandbox policy.

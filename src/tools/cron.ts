@@ -39,7 +39,7 @@ register({
     },
   },
 
-  async execute(args: Record<string, unknown>, _context: ToolContext): Promise<string> {
+  async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const action = String(args.action || 'list');
 
     if (action === 'create' || action === 'update') {
@@ -48,20 +48,60 @@ register({
       if (blocked) return JSON.stringify({ error: blocked });
     }
 
-    // Scheduler implementation will be migrated in a future phase.
-    // This stub provides the interface contract.
     try {
-      const scheduler = await import('../lib/scheduler.js');
-      if (typeof scheduler[action as keyof typeof scheduler] === 'function') {
-        const result = await (scheduler as any)[action](_context.config, args);
+      const {
+        createJob,
+        listJobs,
+        updateJob,
+        pauseJob,
+        resumeJob,
+        removeJob,
+      } = await import('../lib/scheduler.js');
+
+      if (action === 'list') {
+        return JSON.stringify({ ok: true, result: listJobs() });
+      }
+      if (action === 'create') {
+        const result = await createJob(context.config, {
+          name: String(args.name || ''),
+          prompt: String(args.prompt || ''),
+          schedule: String(args.schedule || ''),
+          chat_id: args.chat_id ? String(args.chat_id) : undefined,
+          pack: context.pack,
+          skill: args.skill ? String(args.skill) : undefined,
+        });
         return JSON.stringify({ ok: true, result });
       }
-    } catch {
-      // Scheduler not yet available
+
+      const id = String(args.id || '');
+      if (!id) return JSON.stringify({ error: `id is required for ${action}` });
+
+      if (action === 'update') {
+        const result = await updateJob(context.config, id, {
+          name: args.name ? String(args.name) : undefined,
+          prompt: args.prompt ? String(args.prompt) : undefined,
+          schedule: args.schedule ? String(args.schedule) : undefined,
+          chat_id: args.chat_id ? String(args.chat_id) : undefined,
+          pack: context.pack,
+          skill: args.skill ? String(args.skill) : undefined,
+        });
+        return JSON.stringify({ ok: true, result });
+      }
+      if (action === 'pause') {
+        return JSON.stringify({ ok: true, result: pauseJob(id) });
+      }
+      if (action === 'resume') {
+        return JSON.stringify({ ok: true, result: await resumeJob(context.config, id) });
+      }
+      if (action === 'remove') {
+        return JSON.stringify({ ok: true, result: removeJob(id) });
+      }
+    } catch (err) {
+      return JSON.stringify({ error: (err as Error).message, action });
     }
 
     return JSON.stringify({
-      error: `Scheduler not yet configured. The cron tool will be fully functional after lib/scheduler is implemented.`,
+      error: `Unknown cron action: ${action}. Available: create, list, update, pause, resume, remove.`,
       action,
     });
   },

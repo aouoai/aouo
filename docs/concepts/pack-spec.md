@@ -4,7 +4,7 @@
 This is the v1 Pack Specification. It may evolve as we validate with more packs.
 :::
 
-A Pack is a **Skill Bundle + Plugin** hybrid — skills + tools + DB schema + cron + memory state.
+A Pack is a **vertical agent app** — skills + tools + DB schema + cron + memory state + declared permissions.
 
 ## File Structure
 
@@ -59,6 +59,18 @@ cron_defaults:
 custom_tools:
   - name: pronAssess
     path: tools/pronAssess.ts
+
+permissions:
+  files: []
+  network: []
+  platforms: [telegram]
+  cron: true
+  external_commands: []
+
+runtime:
+  js:
+    tools: true
+  external_tools: []
 ```
 
 ## Key Rules
@@ -68,3 +80,4 @@ custom_tools:
 3. `soul-additions.md` / `rules-additions.md` are **append-only**
 4. Templates are copied once on first install, never overwritten
 5. Custom tools must export a valid `ToolDefinition`
+6. Durable data writes go through `persist`; `db` is read-only diagnostics

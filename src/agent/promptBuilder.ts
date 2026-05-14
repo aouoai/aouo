@@ -5,7 +5,7 @@
  * Constructs the system prompt dynamically:
  * 1. SOUL.md — Identity (core-owned, from ~/.aouo/SOUL.md)
  * 2. RULES.md — Rules (core-owned, from ~/.aouo/RULES.md)
- * 3. Memory — Per-pack USER.md + MEMORY.md (from ~/.aouo/packs/<pack>/)
+ * 3. Memory — Per-pack USER.md + MEMORY.md (from ~/.aouo/data/packs/<pack>/)
  * 4. Skills Index — Available capabilities across all loaded packs
  * 5. Security — Data boundaries
  * 6. Platform Capabilities — Available tools and media

@@ -57,9 +57,9 @@ export async function analyzeImage(
   userCaption?: string,
 ): Promise<VisionResult> {
   // ── Validate API key ──
-  const apiKey = config.gemini?.api_key || process.env['GEMINI_API_KEY'];
+  const apiKey = config.gemini?.api_key;
   if (!apiKey) {
-    return { success: false, error: 'Gemini API key not configured.' };
+    return { success: false, error: 'Gemini API key not configured in config.json.' };
   }
 
   // ── Validate file ──

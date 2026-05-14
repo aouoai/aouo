@@ -1,18 +1,18 @@
 /**
  * @module storage/db
- * @description Singleton SQLite database connection using Node.js built-in `node:sqlite`.
+ * @description Singleton SQLite database connection using better-sqlite3.
  *
  * Manages the lifecycle of the core database connection, using WAL mode
  * for concurrent read performance. Handles automatic schema initialization
  * for sessions and messages tables.
  */
 
-import { DatabaseSync } from 'node:sqlite';
+import Database from 'better-sqlite3';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DB_PATH } from '../lib/paths.js';
 
-let _db: DatabaseSync | null = null;
+let _db: Database.Database | null = null;
 
 /**
  * Initializes the core database schema.
@@ -20,7 +20,7 @@ let _db: DatabaseSync | null = null;
  * Creates `sessions` and `messages` tables if they don't exist.
  * Idempotent — safe to call on every startup.
  */
-function initializeSchema(db: DatabaseSync): void {
+function initializeSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -67,7 +67,7 @@ function initializeSchema(db: DatabaseSync): void {
  *
  * @returns The initialized database connection.
  */
-export function getDb(): DatabaseSync {
+export function getDb(): Database.Database {
   if (_db) return _db;
 
   const dir = dirname(DB_PATH);
@@ -75,7 +75,7 @@ export function getDb(): DatabaseSync {
     mkdirSync(dir, { recursive: true });
   }
 
-  _db = new DatabaseSync(DB_PATH);
+  _db = new Database(DB_PATH);
   _db.exec('PRAGMA journal_mode = WAL');
   _db.exec('PRAGMA foreign_keys = ON');
   _db.exec('PRAGMA busy_timeout = 5000');

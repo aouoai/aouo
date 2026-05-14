@@ -1,8 +1,8 @@
 # What is aouo?
 
-**aouo** is an open-source runtime for building **Domain Companions** — AI agents that deeply understand a single vertical domain and grow with the user over time.
+**aouo** is an open-source runtime for building **vertical agent apps** — long-running AI agents that deeply understand one domain, keep durable state, and improve through structured feedback loops.
 
-Unlike general-purpose chatbots, a Domain Companion has:
+Unlike general-purpose chatbots, a vertical agent app has:
 
 - **Long-term memory** that persists across weeks and months
 - **Proactive outreach** via scheduled nudges and cron-driven sessions
@@ -17,15 +17,15 @@ Think of aouo as an operating system for AI agents:
 | OS Concept | aouo Equivalent |
 |------------|-----------------|
 | Kernel | `aouo` core — ReAct loop, tool system, session management |
-| App | **Pack** — a skill bundle for a specific domain |
+| App | **Pack** — a vertical agent app for a specific domain |
 | File System | `~/.aouo/` — local data, config, pack storage |
 | Syscall | `persist` · `memory` · `cron` · `skill_view` |
 | Home Dir | `SOUL.md` · `RULES.md` · `USER.md` · `MEMORY.md` |
-| App Store | `aouo install github.com/author/pack` |
+| App Store | Future registry for signed `.aouo` packs |
 
 ## Who is this for?
 
-- **Builders** who want to create AI companions for specific domains
+- **Builders** who want to create vertical agent apps for specific domains
 - **Solo developers** who want a Telegram-first agent with real persistence and scheduling
 - **Teams** evaluating vertical AI architectures beyond prompt-and-pray
 
@@ -33,4 +33,4 @@ Think of aouo as an operating system for AI agents:
 
 - [Quick Start](/getting-started/quickstart) — Install and run your first agent
 - [Architecture](/concepts/architecture) — How the system works under the hood
-- [Build a Pack](/build-a-pack/first-pack) — Create your own Domain Companion
+- [Build a Pack](/build-a-pack/first-pack) — Create your own vertical agent app

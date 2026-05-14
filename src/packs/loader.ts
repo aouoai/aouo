@@ -13,17 +13,20 @@
  * 8. Register custom tools
  */
 
-import { readdirSync, existsSync, copyFileSync } from 'node:fs';
+import { readdirSync, existsSync, copyFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PackManifest, LoadedPack } from './types.js';
+import type { AouoConfig } from '../config/defaults.js';
 import { loadManifestFile } from './manifest.js';
 import { runPackMigration, runExtendsColumns } from './schema.js';
 import { registerPackSkills, clearSkills } from './skillRegistry.js';
 import { loadPackMenus, clearMenus } from './fastpath.js';
+import { registerPackCronDefaults } from './cronDefaults.js';
 import { packDataPath, ensurePackDataDir } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
-import { register } from '../tools/registry.js';
+import { register, unregisterPackTools } from '../tools/registry.js';
+import { createExternalToolDefinition } from '../tools/external.js';
 
 /** Currently loaded packs in dependency order. */
 const loadedPacks: LoadedPack[] = [];
@@ -44,10 +47,19 @@ export function scanForPacks(
   try {
     const entries = readdirSync(baseDir, { withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
       if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
 
       const packDir = join(baseDir, entry.name);
+      let isPackDir = entry.isDirectory();
+      if (!isPackDir && entry.isSymbolicLink()) {
+        try {
+          isPackDir = statSync(packDir).isDirectory();
+        } catch {
+          isPackDir = false;
+        }
+      }
+      if (!isPackDir) continue;
+
       const manifestPath = join(packDir, 'pack.yml');
 
       if (existsSync(manifestPath)) {
@@ -123,6 +135,7 @@ function copyTemplates(packName: string, packSourceDir: string): void {
 export async function loadPack(
   packSourceDir: string,
   availablePacks: Set<string> = new Set(),
+  config?: AouoConfig,
 ): Promise<LoadedPack | null> {
   const manifestPath = join(packSourceDir, 'pack.yml');
 
@@ -182,7 +195,7 @@ export async function loadPack(
         const toolModule = await import(toolUrl);
         const toolDef = toolModule.default || toolModule;
         if (toolDef && typeof toolDef === 'object' && toolDef.name && toolDef.execute) {
-          register(toolDef);
+          register(toolDef, manifest.name);
           logger.info({ msg: 'custom_tool_registered', pack: manifest.name, tool: toolDecl.name });
         } else {
           logger.warn({ msg: 'custom_tool_invalid', pack: manifest.name, tool: toolDecl.name });
@@ -198,6 +211,14 @@ export async function loadPack(
     }
   }
 
+  // 7b. Register external tools declared through the explicit JSON I/O protocol
+  if (manifest.runtime.external_tools.length > 0) {
+    for (const toolDecl of manifest.runtime.external_tools) {
+      register(createExternalToolDefinition(manifest.name, toolDecl, packSourceDir), manifest.name);
+      logger.info({ msg: 'external_tool_registered', pack: manifest.name, tool: toolDecl.name });
+    }
+  }
+
   // 8. Build loaded pack instance
   const loaded: LoadedPack = {
     manifest,
@@ -207,6 +228,15 @@ export async function loadPack(
   };
 
   loadedPacks.push(loaded);
+
+  if (config) {
+    try {
+      await registerPackCronDefaults(config, loaded);
+    } catch (err) {
+      logger.warn({ msg: 'cron_defaults_register_failed', pack: manifest.name, error: (err as Error).message });
+    }
+  }
+
   logger.info({
     msg: 'pack_loaded',
     pack: manifest.name,
@@ -231,6 +261,7 @@ export async function loadPack(
 export async function loadAllPacks(
   scanDirs: string[],
   enabledPacks: string[] = [],
+  config?: AouoConfig,
 ): Promise<LoadedPack[]> {
   // Discover all available packs
   const discovered = new Map<string, string>();
@@ -259,7 +290,7 @@ export async function loadAllPacks(
       const path = discovered.get(name);
       if (!path) continue;
 
-      const pack = await loadPack(path, loaded);
+      const pack = await loadPack(path, loaded, config);
       if (pack) {
         loaded.add(name);
         result.push(pack);
@@ -290,6 +321,9 @@ export function getLoadedPacks(): LoadedPack[] {
  * Used during shutdown or testing.
  */
 export function unloadAllPacks(): void {
+  for (const pack of loadedPacks) {
+    unregisterPackTools(pack.manifest.name);
+  }
   loadedPacks.length = 0;
   clearSkills();
   clearMenus();

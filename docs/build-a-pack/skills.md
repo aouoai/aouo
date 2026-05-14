@@ -96,7 +96,7 @@ Users can override any pack skill by placing a `SKILL.md` with the same name in 
 ## Best Practices
 
 - **Be specific**: The LLM follows your markdown literally. Vague instructions produce vague behavior.
-- **Reference tools**: Name the exact tools the skill should use (`persist`, `tts`, `tg_msg`, etc.)
+- **Reference tools**: Name the exact tools the skill should use (`persist`, `tts`, `msg`, etc.). Use `msg(type=...)` for user-facing output and let each adapter render it.
 - **Include scoring rubrics**: Structured output → better data → better MEMORY updates
 - **Keep it under 500 lines**: Long skills increase token cost. Split complex flows into sub-skills.
 - **Test with real conversations**: Run 5–10 real sessions before considering the skill stable.

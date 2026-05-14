@@ -8,10 +8,10 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import Database from 'better-sqlite3';
 import { dirname, join } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { packDataPath, ensurePackDataDir } from '../lib/paths.js';
+import { ensurePackDataDir, STORE_DIR } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -39,7 +39,7 @@ export function runPackMigration(
   }
 
   ensurePackDataDir(packName);
-  const dbPath = packDataPath(packName, 'data/pack.db');
+  const dbPath = getPackDbPath(packName);
 
   // Ensure data directory exists
   const dbDir = dirname(dbPath);
@@ -49,7 +49,7 @@ export function runPackMigration(
 
   try {
     const sql = readFileSync(schemaPath, 'utf-8');
-    const db = new DatabaseSync(dbPath);
+    const db = new Database(dbPath);
 
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA foreign_keys = ON');
@@ -79,7 +79,7 @@ export function runPackMigration(
  * @returns Absolute path to the pack's database file.
  */
 export function getPackDbPath(packName: string): string {
-  return packDataPath(packName, 'data/pack.db');
+  return join(STORE_DIR, `${packName}.db`);
 }
 
 /**
@@ -102,7 +102,7 @@ export function runExtendsColumns(
     try {
       // Use the pack's own database
       const dbPath = getPackDbPath(packName);
-      const db = new DatabaseSync(dbPath);
+      const db = new Database(dbPath);
 
       // Get existing columns
       const existingCols = db

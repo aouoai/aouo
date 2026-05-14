@@ -6,6 +6,8 @@
 import type { LLMProvider } from '../agent/types.js';
 import type { AouoConfig } from '../config/defaults.js';
 import { GeminiProvider } from './gemini.js';
+import { CodexProvider } from './codex/index.js';
+import { DeepSeekProvider } from './deepseek/index.js';
 
 /**
  * Creates an LLM provider instance based on the configured backend.
@@ -15,11 +17,14 @@ import { GeminiProvider } from './gemini.js';
  */
 export function createProvider(config: AouoConfig): LLMProvider {
   switch (config.provider.backend) {
+    case 'codex':
+      return new CodexProvider();
+    case 'deepseek':
+      return new DeepSeekProvider();
     case 'gemini':
-      return new GeminiProvider();
     default:
       return new GeminiProvider();
   }
 }
 
-export { GeminiProvider };
+export { GeminiProvider, CodexProvider, DeepSeekProvider };

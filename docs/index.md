@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: aouo
-  text: Domain Companion Agent Runtime
-  tagline: An open-source OS for vertical AI agents. Install packs, not plugins.
+  text: Vertical Agent App Platform
+  tagline: An open-source runtime for vertical AI agents. Install packs, not prompts.
   actions:
     - theme: brand
       text: Get Started

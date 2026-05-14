@@ -15,15 +15,13 @@
  * and validated at startup.
  */
 export interface AouoConfig {
-  /** Optional JSON schema reference for editor validation. */
-  $schema?: string;
   /** Configuration format version. */
   version: string;
 
   /** Primary LLM provider settings. */
   provider: {
     /** Active provider backend. */
-    backend: 'gemini' | 'openai';
+    backend: 'gemini' | 'codex' | 'deepseek';
     /** Model identifier (e.g., 'gemini-2.5-flash', 'gpt-4o'). */
     model: string;
     /** Maximum output tokens per generation. */
@@ -42,12 +40,10 @@ export interface AouoConfig {
     vision_model: string;
   };
 
-  /** OpenAI-specific settings. */
-  openai: {
-    /** API key for OpenAI. */
+  /** DeepSeek-specific settings. */
+  deepseek: {
+    /** API key for DeepSeek. */
     api_key: string;
-    /** Base URL override (for proxies or compatible endpoints). */
-    base_url: string;
   };
 
   /** Tool system configuration. */
@@ -157,12 +153,11 @@ export interface AouoConfig {
  * No domain-specific tools or settings — those come from packs.
  */
 export const DEFAULT_CONFIG: AouoConfig = {
-  $schema: './config.schema.json',
   version: '0.1.0',
 
   provider: {
     backend: 'gemini',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3-flash-preview',
     max_tokens: 8192,
     temperature: 0.7,
     max_retries: 3,
@@ -170,12 +165,11 @@ export const DEFAULT_CONFIG: AouoConfig = {
 
   gemini: {
     api_key: '',
-    vision_model: 'gemini-2.5-flash',
+    vision_model: 'gemini-3-flash-preview',
   },
 
-  openai: {
+  deepseek: {
     api_key: '',
-    base_url: 'https://api.openai.com/v1',
   },
 
   tools: {
@@ -185,7 +179,7 @@ export const DEFAULT_CONFIG: AouoConfig = {
       'memory',
       'skill_view',
       'clarify',
-      'tg_msg',
+      'msg',
       'tts',
       'db',
       'persist',

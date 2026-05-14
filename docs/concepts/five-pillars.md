@@ -1,6 +1,6 @@
 # Five Pillars
 
-Every aouo pack must implement these five pillars to qualify as a Domain Companion.
+Every serious aouo pack should implement these five pillars to behave like a vertical agent app instead of a prompt bundle.
 
 ## 1. Long-Term Memory
 

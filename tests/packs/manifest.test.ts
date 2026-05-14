@@ -37,6 +37,27 @@ cron_defaults:
     schedule: "0 9 * * *"
     skill: task-gen
     enabled_by_default: true
+
+permissions:
+  files:
+    - "~/aouo/imports"
+  network:
+    - "https://api.example.com"
+  platforms:
+    - telegram
+  cron: true
+  external_commands: []
+
+runtime:
+  js:
+    tools: true
+  external_tools:
+    - name: legacy_importer
+      command: "python tools/importer.py"
+      input: json
+      output: json
+      permissions:
+        - "network:https://api.example.com"
 `;
 
 describe('packs/manifest', () => {
@@ -71,6 +92,25 @@ describe('packs/manifest', () => {
     expect(result.manifest!.cron_defaults).toHaveLength(1);
     expect(result.manifest!.cron_defaults[0]!.id).toBe('daily_tasks');
     expect(result.manifest!.cron_defaults[0]!.schedule).toBe('0 9 * * *');
+  });
+
+  it('should parse declared permissions and runtime requirements', () => {
+    const result = parseManifestYaml(VALID_YAML);
+    expect(result.ok).toBe(true);
+    expect(result.manifest!.permissions.files).toEqual(['~/aouo/imports']);
+    expect(result.manifest!.permissions.network).toEqual(['https://api.example.com']);
+    expect(result.manifest!.permissions.platforms).toEqual(['telegram']);
+    expect(result.manifest!.permissions.cron).toBe(true);
+    expect(result.manifest!.runtime.js.tools).toBe(true);
+    expect(result.manifest!.runtime.external_tools).toEqual([
+      {
+        name: 'legacy_importer',
+        command: 'python tools/importer.py',
+        input: 'json',
+        output: 'json',
+        permissions: ['network:https://api.example.com'],
+      },
+    ]);
   });
 
   it('should reject invalid pack names', () => {
@@ -123,5 +163,16 @@ display_name: Minimal
     expect(result.manifest!.cron_defaults).toEqual([]);
     expect(result.manifest!.custom_tools).toEqual([]);
     expect(result.manifest!.schema.file).toBe('schema.sql');
+    expect(result.manifest!.permissions).toEqual({
+      files: [],
+      network: [],
+      platforms: [],
+      cron: false,
+      external_commands: [],
+    });
+    expect(result.manifest!.runtime).toEqual({
+      js: { tools: true },
+      external_tools: [],
+    });
   });
 });

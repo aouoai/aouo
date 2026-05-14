@@ -251,7 +251,7 @@ export class GeminiProvider implements LLMProvider {
   ): Promise<LLMResponse> {
     const apiKey = config.gemini.api_key;
     if (!apiKey) {
-      throw new Error('Gemini API key not configured. Set GEMINI_API_KEY or config.gemini.api_key.');
+      throw new Error('Gemini API key not configured. Set gemini.api_key in config.json.');
     }
 
     const model = config.provider.model;

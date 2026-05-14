@@ -1,6 +1,6 @@
 /**
  * @module index
- * @description aouo — Domain Companion agent runtime.
+ * @description aouo — vertical agent app platform runtime.
  *
  * Public API surface for programmatic usage. Re-exports the core Agent,
  * type definitions, configuration, pack system, and tool registries.
@@ -38,7 +38,7 @@ export { buildSystemPrompt, buildActiveSkillSystemPrompt } from './agent/promptB
 // ── Configuration ────────────────────────────────────────────────────────────
 export type { AouoConfig } from './config/defaults.js';
 export { DEFAULT_CONFIG } from './config/defaults.js';
-export { loadConfig, getConfig, saveConfig, persistConfig, resetConfig } from './config/loader.js';
+export { createDefaultConfig, loadConfig, getConfig, saveConfig, persistConfig, resetConfig } from './config/loader.js';
 
 // ── Providers ────────────────────────────────────────────────────────────────
 export { createProvider, GeminiProvider } from './providers/index.js';
@@ -50,6 +50,9 @@ export type {
   PackDependency,
   CronDefault,
   CustomToolDeclaration,
+  PackPermissions,
+  PackRuntime,
+  ExternalToolDeclaration,
 } from './packs/types.js';
 
 export { parseManifestYaml, loadManifestFile } from './packs/manifest.js';
@@ -62,6 +65,16 @@ export {
   getLoadedPacks,
   unloadAllPacks,
 } from './packs/loader.js';
+
+export {
+  validatePackDirectory,
+  formatValidationResult,
+  linkPack,
+} from './packs/validate.js';
+export type { PackValidationIssue, PackValidationCheck, PackValidationResult, PackLinkResult } from './packs/validate.js';
+
+export { registerPackCronDefaults } from './packs/cronDefaults.js';
+export type { CronDefaultRegistration } from './packs/cronDefaults.js';
 
 export {
   registerSkill,
@@ -93,6 +106,7 @@ export {
   getToolSchemas,
   dispatch,
   listToolsWithStatus,
+  unregisterPackTools,
 } from './tools/registry.js';
 
 // ── Storage ──────────────────────────────────────────────────────────────────
@@ -115,6 +129,7 @@ export {
   CONFIG_PATH,
   SOUL_PATH,
   RULES_PATH,
+  PACKS_DIR,
   PACKS_DATA_DIR,
   SKILLS_DIR,
   DB_PATH,

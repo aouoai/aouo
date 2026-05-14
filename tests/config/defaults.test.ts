@@ -15,6 +15,11 @@ describe('config/defaults', () => {
     }
   });
 
+  it('should expose the platform-neutral message tool by default', () => {
+    expect(DEFAULT_CONFIG.tools.enabled).toContain('msg');
+    expect(DEFAULT_CONFIG.tools.enabled).not.toContain('tg_msg');
+  });
+
   it('should default security paths to ~/.aouo/', () => {
     expect(DEFAULT_CONFIG.security.allowed_paths).toContain('~/.aouo/');
   });

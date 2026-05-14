@@ -8,9 +8,10 @@ Each pack gets its own isolated SQLite database:
 
 ```
 ~/.aouo/data/
-├── english.db       ← english pack's data
-├── notes.db         ← notes pack's data
-└── fitness.db       ← fitness pack's data
+└── store/
+    ├── english.db       ← english pack's data
+    ├── notes.db         ← notes pack's data
+    └── fitness.db       ← fitness pack's data
 ```
 
 | Rule | Description |
@@ -108,37 +109,7 @@ Skills interact with the database through the `persist` tool. The LLM calls it a
 
 Returns the last N practice records for the specified skill type.
 
-#### `coach_context` — Read aggregated profile
-
-```json
-{
-  "action": "coach_context",
-  "days": 14
-}
-```
-
-Returns a summary of recent practice across all skills in the active pack.
-
-#### `word_upsert` — Add/update a vocabulary word
-
-```json
-{
-  "action": "word_upsert",
-  "word": "ephemeral",
-  "definition": "lasting for a very short time",
-  "context": "The ephemeral beauty of cherry blossoms",
-  "cefr_level": "C1"
-}
-```
-
-#### `due_words` — Get words due for SRS review
-
-```json
-{
-  "action": "due_words",
-  "limit": 20
-}
-```
+Pack-specific actions such as `coach_context`, `word_upsert`, or `due_words` should be implemented as JS/TS pack tools that call `persist` or return structured data for the runtime to persist.
 
 ### Validation
 
@@ -156,8 +127,8 @@ Beyond the database, packs can maintain markdown state files:
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `USER.md` | `~/.aouo/packs/<pack>/` | Stable user facts for this domain (goals, preferences) |
-| `MEMORY.md` | `~/.aouo/packs/<pack>/` | Evolving state (current level, strategy, notes) |
+| `USER.md` | `~/.aouo/data/packs/<pack>/` | Stable user facts for this domain (goals, preferences) |
+| `MEMORY.md` | `~/.aouo/data/packs/<pack>/` | Evolving state (current level, strategy, notes) |
 
 These are read into the system prompt so the agent has persistent context. The `memory` tool can read and write them.
 

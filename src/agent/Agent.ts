@@ -71,7 +71,7 @@ export interface RunResult {
   sessionId: string;
   /** Total tool calls executed during this run. */
   toolCallCount: number;
-  /** Whether the tg_msg tool already sent a response. */
+  /** Whether a tool already delivered visible content to the user. */
   tgSent: boolean;
 }
 
@@ -81,7 +81,7 @@ export interface RunResult {
  * Injected by the pack system to resolve skill names to their body content.
  * Decouples the Agent from the skill loading implementation.
  */
-export type SkillResolver = (name: string) => { body: string } | undefined;
+export type SkillResolver = (name: string) => { body: string; pack?: string } | undefined;
 
 /**
  * The core aouo Agent encapsulating the ReAct loop.
@@ -152,9 +152,11 @@ export class Agent {
     const baseSystemPrompt = buildSystemPrompt(this.config, this.packs, this.skillIndex);
     const activeSkillName = getActiveSkill(sessionId);
     let systemPrompt = baseSystemPrompt;
+    let activePack = this.packs.length === 1 ? this.packs[0]!.manifest.name : undefined;
     if (activeSkillName) {
       const skill = this.resolveSkill(activeSkillName);
       if (skill) {
+        activePack = skill.pack ?? activePack;
         systemPrompt = buildActiveSkillSystemPrompt(baseSystemPrompt, activeSkillName, skill.body);
       }
     }
@@ -181,7 +183,7 @@ export class Agent {
     const contextLimit = this.config.advanced.context_window;
     const compressor = new ContextCompressor(this.config, this.provider);
     let totalToolCalls = 0;
-    let tgSent = false;
+    let toolSentContent = false;
     let compressionCount = 0;
     const MAX_COMPRESSIONS = 3;
     let lastRealTokenCount = 0;
@@ -293,6 +295,7 @@ export class Agent {
             config: this.config,
             sessionId,
             sessionKey,
+            pack: activePack,
           });
 
           // Active skill persistence on skill_view
@@ -301,6 +304,7 @@ export class Agent {
             const skill = this.resolveSkill(skillName);
             if (skill) {
               await setActiveSkill(sessionId, skillName);
+              activePack = skill.pack ?? activePack;
               messages[0] = {
                 role: 'system',
                 content: buildActiveSkillSystemPrompt(
@@ -313,16 +317,8 @@ export class Agent {
             }
           }
 
-          // tg_msg sent detection
-          if (toolCall.name === 'tg_msg' && !result.isError) {
-            try {
-              const parsed = JSON.parse(result.content);
-              if (parsed.ok && parsed.sent_content) {
-                tgSent = true;
-              }
-            } catch {
-              /* non-JSON result */
-            }
+          if (!result.isError && toolResultSentContent(result.content)) {
+            toolSentContent = true;
           }
 
           if (this.config.ui.show_tool_calls && this.adapter.showToolResult) {
@@ -358,7 +354,7 @@ export class Agent {
         content: finalContent,
         sessionId,
         toolCallCount: totalToolCalls,
-        tgSent,
+        tgSent: toolSentContent,
       };
     }
 
@@ -372,7 +368,7 @@ export class Agent {
       content: fallbackMsg,
       sessionId,
       toolCallCount: totalToolCalls,
-      tgSent,
+      tgSent: toolSentContent,
     };
   }
 }
@@ -396,6 +392,15 @@ function degradeForStorage(messages: Message[]): Message[] {
     }
     return msg;
   });
+}
+
+function toolResultSentContent(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content) as { ok?: unknown; sent_content?: unknown };
+    return parsed.ok === true && parsed.sent_content === true;
+  } catch {
+    return false;
+  }
 }
 
 // ── History Tool Result Trimming ────────────────────────────────────────────
@@ -432,9 +437,9 @@ function trimOldToolResults(history: Message[]): Message[] {
 
         // Preserve sent text for conversational continuity
         for (const tc of msg.toolCalls) {
-          if (tc.name === 'tg_msg' && tc.args?.['text']) {
+          if ((tc.name === 'msg' || tc.name === 'tg_msg') && tc.args?.['text']) {
             const text = String(tc.args['text']);
-            const preview = text.length > 500 ? text.substring(0, 500) + '…' : text;
+            const preview = text.length > 500 ? text.substring(0, 500) + '...' : text;
             parts.push(`[Sent to user: ${preview}]`);
           }
         }

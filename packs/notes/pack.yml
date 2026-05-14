@@ -1,0 +1,40 @@
+# Notes Companion Pack
+name: notes
+version: 0.1.0
+display_name: Notes Companion
+description: Daily journaling, reflection, and note-taking companion
+
+provided_skills:
+  - onboarding
+  - aggregator
+  - daily-note
+  - review
+
+schema:
+  file: schema.sql
+  owned_tables:
+    - entries
+    - weekly_summaries
+
+persist_contract:
+  skill_type_prefix: "notes."
+  required_fields:
+    - skill_type
+    - content
+  optional_fields:
+    - mood
+    - tags
+    - metadata
+
+cron_defaults:
+  - id: evening-journal
+    schedule: "0 21 * * *"
+    skill: daily-note
+    enabled_by_default: true
+  - id: weekly-review
+    schedule: "0 10 * * 0"
+    skill: review
+    enabled_by_default: false
+
+permissions:
+  cron: true

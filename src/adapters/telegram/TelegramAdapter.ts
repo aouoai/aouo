@@ -28,9 +28,9 @@ import { Bot, type Context } from 'grammy';
 import { Agent, type RunResult } from '../../agent/Agent.js';
 import { registerAllTools } from '../../tools/registry.js';
 import { logger } from '../../lib/logger.js';
-import { getAllSkills, getSkill } from '../../packs/skillRegistry.js';
+import { buildSkillIndex, getAllSkills, getSkill } from '../../packs/skillRegistry.js';
 import { getLoadedPacks } from '../../packs/loader.js';
-import { createSession, setActiveSkill } from '../../storage/sessionStore.js';
+import { createSession, getOrCreateSession, setActiveSkill } from '../../storage/sessionStore.js';
 import { resolveFastPath } from '../../packs/fastpath.js';
 import type { AouoConfig } from '../../config/defaults.js';
 import type { MessageFile } from '../../agent/types.js';
@@ -40,6 +40,7 @@ import { createProvider } from '../../providers/index.js';
 import { TelegramSessionAdapter } from './SessionAdapter.js';
 import type { PendingApproval, PendingChoice } from './types.js';
 import { formatTgError, startTypingIndicator } from './errors.js';
+import { writePid, removePid } from '../../lib/pidfile.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ export class TelegramAdapter {
 
   constructor(config: AouoConfig) {
     if (!config.telegram.bot_token) {
-      throw new Error('Telegram bot_token not configured. Run "aouo init" or set AOUO_TELEGRAM_BOT_TOKEN.');
+      throw new Error('Telegram bot_token not configured. Run "aouo config" and set telegram.bot_token.');
     }
     this.config = config;
     this.bot = new Bot(config.telegram.bot_token);
@@ -158,6 +159,17 @@ export class TelegramAdapter {
     return getLoadedPacks().find(p => !p.onboarded) ?? null;
   }
 
+  private createAgent(sessionAdapter: TelegramSessionAdapter): Agent {
+    return new Agent(this.config, sessionAdapter, this.provider, {
+      packs: getLoadedPacks(),
+      skillIndex: buildSkillIndex(),
+      resolveSkill(name) {
+        const skill = getSkill(name);
+        return skill ? { body: skill.body, pack: skill.pack } : undefined;
+      },
+    });
+  }
+
   // ── Core Message Pipeline ──────────────────────────────────────────────────
 
   /**
@@ -177,6 +189,7 @@ export class TelegramAdapter {
     input: string,
     cleanup?: () => void,
     files?: MessageFile[],
+    sessionId?: string,
   ): Promise<void> {
     const userId = ctx.from?.id;
 
@@ -187,6 +200,7 @@ export class TelegramAdapter {
     }
 
     const sessionKey = `tg:${ctx.chat!.id}`;
+    sessionId ??= await getOrCreateSession(sessionKey);
     const typingInterval = startTypingIndicator(ctx);
 
     logger.info({
@@ -202,7 +216,7 @@ export class TelegramAdapter {
       this.activePolls, this.paginatedMessages,
     );
 
-    const agent = new Agent(this.config, sessionAdapter, this.provider);
+    const agent = this.createAgent(sessionAdapter);
 
     // ── Onboarding guard (§4.2) ──
     // If any loaded pack hasn't been onboarded, force-activate its
@@ -212,7 +226,7 @@ export class TelegramAdapter {
       const onboardingSkill = getSkill(`${unonboarded.manifest.name}:onboarding`)
         || getSkill('onboarding');
       if (onboardingSkill) {
-        await setActiveSkill(sessionKey, onboardingSkill.name);
+        await setActiveSkill(sessionId, onboardingSkill.name);
         logger.info({
           msg: 'onboarding_forced',
           pack: unonboarded.manifest.name,
@@ -223,7 +237,7 @@ export class TelegramAdapter {
 
     try {
       await sessionAdapter.sendThinking();
-      const result: RunResult = await agent.run(input, { sessionKey, files });
+      const result: RunResult = await agent.run(input, { sessionKey, sessionId, files });
 
       if (!result.tgSent && result.content) {
         if (result.toolCallCount > 0) {
@@ -305,14 +319,15 @@ export class TelegramAdapter {
     this.bot.command('new', async (ctx) => {
       const sessionKey = `tg:${ctx.chat.id}`;
       this.cancelPending();
-      await createSession(sessionKey);
+      const sessionId = await createSession(sessionKey);
       logger.info({ msg: 'tg_new_session', chatId: ctx.chat.id });
 
       // Try to activate the default start skill (if packs define one)
       const startSkill = skills.find(s => s.name === 'planner') || skills[0];
       if (startSkill) {
+        await setActiveSkill(sessionId, startSkill.name);
         const input = `[/command: ${startSkill.name}] Run the "${startSkill.name}" skill now.`;
-        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input));
+        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId));
       } else {
         await ctx.reply('🔄 Session cleared. Send a message to start.');
       }
@@ -341,9 +356,10 @@ export class TelegramAdapter {
       this.bot.command(cmd, async (ctx) => {
         logger.info({ msg: 'tg_skill_cmd', chatId: ctx.chat.id, skill: skillName });
         const sessionKey = `tg:${ctx.chat.id}`;
-        await createSession(sessionKey);
+        const sessionId = await createSession(sessionKey);
+        await setActiveSkill(sessionId, skillName);
         const input = `[/command: ${skillName}] Run the "${skillName}" skill now.`;
-        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input));
+        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId));
       });
     }
 
@@ -573,7 +589,7 @@ export class TelegramAdapter {
           this.activePolls, this.paginatedMessages,
         );
 
-        const agent = new Agent(this.config, sessionAdapter, this.provider);
+        const agent = this.createAgent(sessionAdapter);
 
         try {
           await sessionAdapter.sendThinking();
@@ -632,7 +648,7 @@ export class TelegramAdapter {
           this.activePolls, this.paginatedMessages,
         );
         sessionAdapter.setChatIdOverride(poll.chatId);
-        const agent = new Agent(this.config, sessionAdapter, this.provider);
+        const agent = this.createAgent(sessionAdapter);
 
         try {
           const result: RunResult = await agent.run(input, { sessionKey });
@@ -664,8 +680,9 @@ export class TelegramAdapter {
 
     await this.bot.start({
       onStart: (info) => {
-        console.log(`[gateway] Bot @${info.username} is running`);
-        logger.info({ msg: 'tg_bot_started', username: info.username });
+        writePid('gateway');
+        console.log(`[gateway] Bot @${info.username} is running (PID ${process.pid})`);
+        logger.info({ msg: 'tg_bot_started', username: info.username, pid: process.pid });
       },
     });
   }
@@ -722,6 +739,7 @@ export class TelegramAdapter {
       stopScheduler();
     } catch { /* no scheduler */ }
 
+    removePid('gateway');
     this.bot.stop();
   }
 }

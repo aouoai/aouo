@@ -4,7 +4,7 @@
  *
  * Supports simple mode (text + voice + rate) and dialogue mode
  * (multi-voice SSML segments). Returns the file path for delivery
- * via `tg_msg(type="voice")`.
+ * via `msg(type="voice")`.
  *
  * TTS implementation is expected to be injected via a pack or
  * configured as a lib module. This tool defines the interface contract.
@@ -16,7 +16,7 @@ import type { ToolContext } from '../agent/types.js';
 register({
   name: 'tts',
   timeoutMs: 60_000,
-  description: `Generate speech audio via TTS. Returns the file path — use tg_msg(type="voice", url=filePath) to send it.
+  description: `Generate speech audio via TTS. Returns the file path — use msg(type="voice", url=filePath) to send it.
 
 **Simple mode**: pass \`text\` + optional \`voice\`/\`rate\`.
 **Dialogue mode**: pass \`segments\` JSON array for multi-voice audio with pauses.

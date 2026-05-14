@@ -5,6 +5,7 @@ import { scanForPacks, loadPack, unloadAllPacks } from '../../src/packs/loader.j
 import { loadManifestFile } from '../../src/packs/manifest.js';
 import { getSkill, getAllSkills } from '../../src/packs/skillRegistry.js';
 import { packDataPath } from '../../src/lib/paths.js';
+import { getPackDbPath } from '../../src/packs/schema.js';
 
 const FIXTURES_DIR = join(import.meta.dirname, '..', 'fixtures', 'packs');
 
@@ -52,7 +53,7 @@ describe('packs (integration)', () => {
 
   it('should copy USER.md.tmpl on first load', async () => {
     await loadPack(join(FIXTURES_DIR, 'hello-world'));
-    // Templates are copied to ~/.aouo/packs/<name>/USER.md
+    // Templates are copied to ~/.aouo/data/packs/<name>/USER.md
     const userMdPath = packDataPath('hello-world', 'USER.md');
     expect(existsSync(userMdPath)).toBe(true);
   });
@@ -61,8 +62,8 @@ describe('packs (integration)', () => {
     const loaded = await loadPack(join(FIXTURES_DIR, 'hello-world'));
     expect(loaded).not.toBeNull();
 
-    // Pack DB should have been created
-    const dbPath = packDataPath('hello-world', join('data', 'pack.db'));
+    // Pack DB should use the shared store path for pack-scoped databases.
+    const dbPath = getPackDbPath('hello-world');
     expect(existsSync(dbPath)).toBe(true);
   });
 });

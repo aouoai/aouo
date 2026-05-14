@@ -154,6 +154,57 @@ export interface LLMProvider {
 
 // ── Platform Adapter ─────────────────────────────────────────────────────────
 
+export type AdapterMessageType =
+  | 'text'
+  | 'audio'
+  | 'voice'
+  | 'document'
+  | 'keyboard'
+  | 'quiz'
+  | 'edit'
+  | 'delete'
+  | 'react'
+  | 'action'
+  | 'countdown'
+  | 'paginate';
+
+/**
+ * Platform-neutral outbound message intent.
+ *
+ * Tools and skills express what they want to send; adapters decide how to
+ * render it on their platform or how to degrade when a feature is unsupported.
+ */
+export interface AdapterMessagePayload {
+  type: AdapterMessageType;
+  text?: string;
+  url?: string;
+  buttons?: string[][];
+  options?: string[];
+  correct?: number;
+  explanation?: string;
+  messageId?: string | number;
+  replyTo?: string | number;
+  tag?: string;
+  emoji?: string;
+  action?: string;
+  parseMode?: string;
+  seconds?: number;
+  expireText?: string;
+}
+
+/**
+ * Result returned by an adapter after handling an outbound message intent.
+ */
+export interface AdapterMessageResult {
+  ok: boolean;
+  messageId?: string | number | null;
+  pollId?: string;
+  pageCount?: number;
+  sentContent?: boolean;
+  error?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Platform adapter interface for user interaction.
  *
@@ -208,6 +259,12 @@ export interface Adapter {
    * @returns A promise resolving to the selected choice.
    */
   requestChoice?(description: string, choices: string[]): Promise<string>;
+
+  /**
+   * Sends a structured outbound message intent through the platform.
+   * Optional — adapters without rich-message support can rely on reply().
+   */
+  dispatchMessage?(message: AdapterMessagePayload): Promise<AdapterMessageResult>;
 }
 
 // ── Tool System ──────────────────────────────────────────────────────────────
@@ -278,6 +335,8 @@ export interface ToolContext {
  * ```
  */
 export interface ToolDefinition {
+  /** Optional platform allowlist. If omitted, the tool is available on every adapter. */
+  platforms?: string[];
   /** Unique name of the tool, used in LLM function declarations. */
   name: string;
   /** Human-readable description guiding the LLM on when to use this tool. */
