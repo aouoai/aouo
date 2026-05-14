@@ -25,6 +25,7 @@ import type {
 } from '../../agent/types.js';
 import { logger } from '../../lib/logger.js';
 import { splitMarkdownForTelegram } from './markdown.js';
+import { extractThreadId } from './routing.js';
 import type { SendMessageOptions, PendingApproval, PendingChoice } from './types.js';
 
 // ── Tool Status Labels ───────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ export class TelegramSessionAdapter implements Adapter {
   private bot: Bot;
   private pendingApprovals: Map<string, PendingApproval>;
   private pendingChoices: Map<string, PendingChoice>;
-  private activePolls: Map<string, { chatId: number; options: string[]; correctIndex: number }>;
+  private activePolls: Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>;
   private paginatedMessages: Map<number, { pages: string[]; buttons: string; chatId: number }>;
 
   /** User-defined tag → Telegram message_id mapping for later reference. */
@@ -105,12 +106,20 @@ export class TelegramSessionAdapter implements Adapter {
   /** Overrides chatId for contexts without ctx.chat (e.g., poll_answer). */
   private _overrideChatId?: number;
 
+  /**
+   * Captured at construction (or overridden later for events without topic
+   * context such as poll_answer). Replies must include this so they land
+   * back in the same forum topic instead of falling through to General.
+   * `undefined` for private chats, non-forum groups, and General topic.
+   */
+  private threadId: number | undefined;
+
   constructor(
     ctx: Context,
     bot: Bot,
     pendingApprovals: Map<string, PendingApproval>,
     pendingChoices: Map<string, PendingChoice>,
-    activePolls?: Map<string, { chatId: number; options: string[]; correctIndex: number }>,
+    activePolls?: Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>,
     paginatedMessages?: Map<number, { pages: string[]; buttons: string; chatId: number }>,
   ) {
     this.ctx = ctx;
@@ -119,6 +128,7 @@ export class TelegramSessionAdapter implements Adapter {
     this.pendingChoices = pendingChoices;
     this.activePolls = activePolls ?? new Map();
     this.paginatedMessages = paginatedMessages ?? new Map();
+    this.threadId = extractThreadId(ctx);
   }
 
   // ── Chat Resolution ────────────────────────────────────────────────────────
@@ -127,9 +137,26 @@ export class TelegramSessionAdapter implements Adapter {
     return this._overrideChatId ?? this.ctx.chat!.id;
   }
 
+  /**
+   * Spread into every outbound send-options object so the reply lands in
+   * the originating forum topic. Empty object when not in a topic.
+   */
+  private get threadOpts(): { message_thread_id?: number } {
+    return this.threadId ? { message_thread_id: this.threadId } : {};
+  }
+
   /** Override chatId for contexts without ctx.chat (e.g., poll_answer). */
   setChatIdOverride(id: number): void {
     this._overrideChatId = id;
+  }
+
+  /**
+   * Override the captured forum-topic id. Used by poll_answer event handlers
+   * where the incoming context lacks `message_thread_id` but we know the
+   * originating topic from the saved poll record.
+   */
+  setThreadIdOverride(id: number | undefined): void {
+    this.threadId = id;
   }
 
   // ── Queue Infrastructure ───────────────────────────────────────────────────
@@ -193,6 +220,7 @@ export class TelegramSessionAdapter implements Adapter {
       const rp = i === 0 ? replyParams : undefined;
 
       const msg = await this.bot.api.sendMessage(this.chatId, segment!, {
+        ...this.threadOpts,
         reply_parameters: rp,
       }).catch((err) => {
         logger.warn({ msg: 'tg_reply_failed', error: err?.message, idx: i });
@@ -211,7 +239,10 @@ export class TelegramSessionAdapter implements Adapter {
    */
   async sendThinking(): Promise<void> {
     this.statusText = '🧠 Thinking...';
-    const msg = await this.ctx.reply(this.statusText, { parse_mode: undefined }).catch(() => null);
+    const msg = await this.ctx.reply(this.statusText, {
+      ...this.threadOpts,
+      parse_mode: undefined,
+    }).catch(() => null);
     if (msg) this.statusMessageId = msg.message_id;
   }
 
@@ -233,7 +264,10 @@ export class TelegramSessionAdapter implements Adapter {
   private async flushStatus(): Promise<void> {
     try {
       if (!this.statusMessageId) {
-        const msg = await this.ctx.reply(this.statusText, { parse_mode: undefined }).catch(() => null);
+        const msg = await this.ctx.reply(this.statusText, {
+          ...this.threadOpts,
+          parse_mode: undefined,
+        }).catch(() => null);
         if (msg) this.statusMessageId = msg.message_id;
       } else {
         await this.bot.api.editMessageText(this.chatId, this.statusMessageId, this.statusText).catch(() => {});
@@ -267,6 +301,7 @@ export class TelegramSessionAdapter implements Adapter {
 
     await this.enqueue(async () => {
       await this.ctx.reply(`🔐 Approval Required\n\n${description}`, {
+        ...this.threadOpts,
         reply_markup: keyboard,
       });
     });
@@ -295,7 +330,10 @@ export class TelegramSessionAdapter implements Adapter {
       keyboard.row();
     });
 
-    const sent = await this.ctx.reply(description, { reply_markup: keyboard });
+    const sent = await this.ctx.reply(description, {
+      ...this.threadOpts,
+      reply_markup: keyboard,
+    });
 
     return new Promise<string>((resolve) => {
       this.pendingChoices.set(key, { resolve });
@@ -442,12 +480,14 @@ export class TelegramSessionAdapter implements Adapter {
       let msg;
       try {
         msg = await this.bot.api.sendMessage(this.chatId, text, {
+          ...this.threadOpts,
           parse_mode: parseMode as any,
           reply_parameters: replyTo ? { message_id: replyTo } : undefined,
         });
       } catch {
         // Fallback: send without parse mode
         msg = await this.bot.api.sendMessage(this.chatId, text, {
+          ...this.threadOpts,
           reply_parameters: replyTo ? { message_id: replyTo } : undefined,
         });
       }
@@ -466,6 +506,7 @@ export class TelegramSessionAdapter implements Adapter {
       const source = isAbsolute(audio) || audio.startsWith('.') ? new InputFile(audio) : audio;
 
       const msg = await this.bot.api.sendAudio(this.chatId, source, {
+        ...this.threadOpts,
         caption: caption || undefined,
         parse_mode: parseMode as any,
         reply_parameters: replyTo ? { message_id: replyTo } : undefined,
@@ -484,6 +525,7 @@ export class TelegramSessionAdapter implements Adapter {
       const parseMode = opts?.parseMode === 'none' ? undefined : (opts?.parseMode || 'HTML');
 
       const msg = await this.bot.api.sendVoice(this.chatId, new InputFile(voicePath), {
+        ...this.threadOpts,
         caption: caption || undefined,
         parse_mode: parseMode as any,
         reply_parameters: replyTo ? { message_id: replyTo } : undefined,
@@ -505,12 +547,14 @@ export class TelegramSessionAdapter implements Adapter {
       let msg;
       try {
         msg = await this.bot.api.sendMessage(this.chatId, text, {
+          ...this.threadOpts,
           parse_mode: 'HTML',
           reply_markup: keyboard,
           reply_parameters: replyTo ? { message_id: replyTo } : undefined,
         });
       } catch {
         msg = await this.bot.api.sendMessage(this.chatId, text, {
+          ...this.threadOpts,
           reply_markup: keyboard,
           reply_parameters: replyTo ? { message_id: replyTo } : undefined,
         });
@@ -531,6 +575,7 @@ export class TelegramSessionAdapter implements Adapter {
   ): Promise<{ messageId: number; pollId: string }> {
     return this.enqueue(async () => {
       const msg = await this.bot.api.sendPoll(this.chatId, question, options, {
+        ...this.threadOpts,
         type: 'quiz',
         correct_option_id: correctIndex,
         is_anonymous: false,
@@ -542,6 +587,7 @@ export class TelegramSessionAdapter implements Adapter {
 
       this.activePolls.set(msg.poll!.id, {
         chatId: this.chatId,
+        ...(this.threadId !== undefined ? { threadId: this.threadId } : {}),
         options,
         correctIndex,
       });
@@ -580,6 +626,7 @@ export class TelegramSessionAdapter implements Adapter {
       const source = isAbsolute(fileUrl) ? new InputFile(fileUrl) : fileUrl;
 
       const msg = await this.bot.api.sendDocument(this.chatId, source, {
+        ...this.threadOpts,
         caption: opts.caption,
         parse_mode: (opts.parseMode as any) || undefined,
         reply_parameters: rp,
@@ -600,7 +647,7 @@ export class TelegramSessionAdapter implements Adapter {
   /** Show a chat action indicator (typing, record_voice, etc). */
   async sendChatAction(action: string = 'typing'): Promise<void> {
     return this.enqueue(async () => {
-      await this.bot.api.sendChatAction(this.chatId, action as any).catch(() => {});
+      await this.bot.api.sendChatAction(this.chatId, action as any, this.threadOpts).catch(() => {});
     });
   }
 
@@ -643,6 +690,7 @@ export class TelegramSessionAdapter implements Adapter {
       const fmt = (s: number) => initialText.replace(/\{seconds\}/g, String(s));
 
       const msg = await this.bot.api.sendMessage(this.chatId, fmt(seconds), {
+        ...this.threadOpts,
         parse_mode: 'HTML',
         reply_parameters: replyTo ? { message_id: replyTo } : undefined,
       });
@@ -694,6 +742,7 @@ export class TelegramSessionAdapter implements Adapter {
       } catch { /* ignore */ }
 
       const msg = await this.bot.api.sendMessage(this.chatId, pages[0]!, {
+        ...this.threadOpts,
         parse_mode: 'HTML',
         reply_parameters: replyTo ? { message_id: replyTo } : undefined,
         reply_markup: { inline_keyboard: [...trailingRows] },

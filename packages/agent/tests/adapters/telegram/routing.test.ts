@@ -107,6 +107,21 @@ describe('adapters/telegram/routing', () => {
     it('returns an empty layout for zero packs', () => {
       expect(packPickerKeyboard([])).toEqual([]);
     });
+
+    it('prefixes the current pack with ✅ instead of 📦', () => {
+      expect(packPickerKeyboard(['notes', 'creator', 'vocab'], 'creator')).toEqual([
+        [{ text: '📦 notes', callback_data: 'pack:notes' }],
+        [{ text: '✅ creator', callback_data: 'pack:creator' }],
+        [{ text: '📦 vocab', callback_data: 'pack:vocab' }],
+      ]);
+    });
+
+    it('ignores currentPack when it does not match any pack', () => {
+      expect(packPickerKeyboard(['a', 'b'], 'c')).toEqual([
+        [{ text: '📦 a', callback_data: 'pack:a' }],
+        [{ text: '📦 b', callback_data: 'pack:b' }],
+      ]);
+    });
   });
 
   describe('formatRouteSummary', () => {

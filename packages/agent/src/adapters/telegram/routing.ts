@@ -58,13 +58,42 @@ export function buildAddressFromTelegram(ctx: TelegramRouteCtx): ConversationAdd
 }
 
 /**
+ * Extract the numeric forum-topic id from a Grammy context, or undefined
+ * when the message is not a real topic post (private chat, group without
+ * topics, or the General topic of a forum supergroup).
+ *
+ * Mirrors {@link buildAddressFromTelegram} so the inbound route and the
+ * outbound reply agree on whether the message lives in a topic. Outbound
+ * `sendMessage` / `sendAudio` / etc. should spread the result into the
+ * options object as `message_thread_id` so replies land back in the
+ * originating topic instead of falling through to General.
+ */
+export function extractThreadId(ctx: TelegramRouteCtx): number | undefined {
+  const threadId =
+    ctx.message?.message_thread_id ?? ctx.callbackQuery?.message?.message_thread_id;
+  if (threadId === undefined || threadId <= 0) return undefined;
+  const isTopic = ctx.message?.is_topic_message ?? true;
+  return isTopic ? threadId : undefined;
+}
+
+/**
  * Build the inline-keyboard layout for the pack picker. One button per pack,
  * one per row so long display names don't get clipped. Callback data is
  * namespaced with `pack:` so the dispatcher can route it without colliding
  * with user-defined callbacks.
+ *
+ * When `currentPack` is provided, the matching button is prefixed with `✅ `
+ * (instead of `📦 `) so the user can see at a glance which pack is currently
+ * bound to this route.
  */
-export function packPickerKeyboard(packs: string[]): Array<Array<{ text: string; callback_data: string }>> {
-  return packs.map((name) => [{ text: `📦 ${name}`, callback_data: `pack:${name}` }]);
+export function packPickerKeyboard(
+  packs: string[],
+  currentPack?: string,
+): Array<Array<{ text: string; callback_data: string }>> {
+  return packs.map((name) => {
+    const prefix = name === currentPack ? '✅' : '📦';
+    return [{ text: `${prefix} ${name}`, callback_data: `pack:${name}` }];
+  });
 }
 
 /**

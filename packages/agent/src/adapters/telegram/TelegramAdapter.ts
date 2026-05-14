@@ -43,6 +43,7 @@ import {
 } from '../../storage/conversationRoutes.js';
 import {
   buildAddressFromTelegram,
+  extractThreadId,
   formatRouteSummary,
   isUserAuthorized,
   packPickerKeyboard,
@@ -77,6 +78,18 @@ async function fetchWithRetry(url: string, maxAttempts = 3, timeoutMs = 15_000):
 }
 
 /**
+ * Topic-aware wrapper around `ctx.reply`. Forwards to grammy with the
+ * forum-topic id appended so replies land in the originating topic
+ * instead of falling through to General. Use this everywhere instead of
+ * `ctx.reply` for command handlers and any reply outside SessionAdapter.
+ */
+type ReplyExtra = Parameters<Context['reply']>[1];
+function replyInTopic(ctx: Context, text: string, extra?: ReplyExtra) {
+  const tid = extractThreadId(ctx);
+  return ctx.reply(text, tid ? { ...(extra ?? {}), message_thread_id: tid } as ReplyExtra : extra);
+}
+
+/**
  * Resolves a button's display label from a callback_query context.
  */
 function getCallbackLabel(ctx: Context, data: string): string {
@@ -101,10 +114,22 @@ export class TelegramAdapter {
   private pendingApprovals = new Map<string, PendingApproval>();
   /** Pending choice dialogs, keyed by choice ID. */
   private pendingChoices = new Map<string, PendingChoice>();
-  /** Per-chat serial execution queue. */
-  private chatQueue = new Map<number, Promise<void>>();
+  /**
+   * Serial execution queue keyed per **route** (chat + thread), not per chat.
+   * A supergroup's topics share the same chat id, so keying on chatId alone
+   * lets topic A's processing block topic B. Keying on `${chatId}:${threadId}`
+   * gives each topic its own queue while still serializing within a topic.
+   */
+  private chatQueue = new Map<string, Promise<void>>();
+  /**
+   * Hard timeout for any single task in {@link chatQueue}. Generous enough
+   * to cover long agent runs (including 5-min approval prompts and big LLM
+   * streams) but bounded so a permanently-stuck task can't poison the queue
+   * and silently brick every subsequent message for that route.
+   */
+  private static readonly QUEUE_TASK_TIMEOUT_MS = 5 * 60 * 1000;
   /** Active quiz polls for answer correlation. */
-  activePolls = new Map<string, { chatId: number; options: string[]; correctIndex: number }>();
+  activePolls = new Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>();
   /** In-memory paginated message store for client-side page flipping. */
   paginatedMessages = new Map<number, { pages: string[]; buttons: string; chatId: number }>();
 
@@ -120,17 +145,43 @@ export class TelegramAdapter {
   // ── Per-Chat Queue ─────────────────────────────────────────────────────────
 
   /**
-   * Appends an async task onto the serial execution queue for a chat.
-   * Errors are caught and logged — they never break the queue chain.
+   * Build the per-route queue key. Forum-topic id, when present, splits the
+   * queue so that messages in different topics of the same supergroup run
+   * concurrently instead of blocking each other.
    */
-  private enqueuePerChat(chatId: number, task: () => Promise<void>): void {
-    const prev = this.chatQueue.get(chatId) ?? Promise.resolve();
-    const next = prev.then(task).catch(err => {
-      logger.error({ msg: 'tg_queue_error', chatId, error: (err as Error).message });
+  private routeKey(chatId: number, threadId?: number): string {
+    return threadId ? `${chatId}:${threadId}` : String(chatId);
+  }
+
+  /**
+   * Appends an async task onto the serial execution queue for a route.
+   *
+   * The task is raced against a hard {@link QUEUE_TASK_TIMEOUT_MS} timeout
+   * so a stuck inner promise (hung LLM stream, hung Telegram API, etc.)
+   * can't permanently brick the queue — when the timeout fires the slot
+   * is freed for the next message even if the underlying work is still
+   * running. Errors and timeouts are logged but never break the chain.
+   */
+  private enqueuePerChat(chatId: number, task: () => Promise<void>, threadId?: number): void {
+    const key = this.routeKey(chatId, threadId);
+    const prev = this.chatQueue.get(key) ?? Promise.resolve();
+
+    const next = prev.then(() => {
+      const guarded = task();
+      const timeout = new Promise<void>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`tg_queue_task_timeout after ${TelegramAdapter.QUEUE_TASK_TIMEOUT_MS}ms`)),
+          TelegramAdapter.QUEUE_TASK_TIMEOUT_MS,
+        ),
+      );
+      return Promise.race([guarded, timeout]);
+    }).catch(err => {
+      logger.error({ msg: 'tg_queue_error', routeKey: key, error: (err as Error).message });
     });
-    this.chatQueue.set(chatId, next);
+
+    this.chatQueue.set(key, next);
     next.then(() => {
-      if (this.chatQueue.get(chatId) === next) this.chatQueue.delete(chatId);
+      if (this.chatQueue.get(key) === next) this.chatQueue.delete(key);
     });
   }
 
@@ -204,7 +255,7 @@ export class TelegramAdapter {
     const userId = ctx.from?.id;
 
     if (!this.isAuthorized(userId)) {
-      await ctx.reply('⛔ Unauthorized. Your user ID is not in the allowed list.');
+      await replyInTopic(ctx,'⛔ Unauthorized. Your user ID is not in the allowed list.');
       logger.warn({ msg: 'unauthorized_user', userId, chatId: ctx.chat?.id });
       return;
     }
@@ -216,7 +267,7 @@ export class TelegramAdapter {
     // picker instead of letting RouteRequiredError bubble up.
     const address = buildAddressFromTelegram(ctx);
     if (!address) {
-      await ctx.reply('⚠️ Could not determine conversation address. Please try again.');
+      await replyInTopic(ctx,'⚠️ Could not determine conversation address. Please try again.');
       return;
     }
     const route = getOrCreateRoute(address);
@@ -231,7 +282,7 @@ export class TelegramAdapter {
       setRoutePack(route.id, only);
       activePack = only;
     } else if (!activePack && loadedPacks.length > 1) {
-      await this.sendPackPicker(ctx, loadedPacks.map((p) => p.manifest.name));
+      await this.sendPackPicker(ctx, loadedPacks.map((p) => p.manifest.name), route.activePack ?? undefined);
       return;
     }
 
@@ -297,20 +348,20 @@ export class TelegramAdapter {
         // lookup and the agent call. Reset route and show the picker.
         logger.warn({ msg: 'tg_route_required', chatId: ctx.chat!.id, reason: err.reason });
         setRoutePack(route.id, null);
-        await this.sendPackPicker(ctx, err.availablePacks);
+        await this.sendPackPicker(ctx, err.availablePacks, route.activePack ?? undefined);
       } else if (err instanceof QuotaExceededError) {
         logger.warn({ msg: 'tg_quota_exceeded', chatId: ctx.chat!.id, scope: err.scope, used: err.used, cap: err.cap });
         const recovery = err.scope === 'session'
           ? 'Send `/new` to start a fresh session, or raise `advanced.session_tokens_max` in `~/.aouo/config.json`.'
           : 'Wait for midnight reset, or raise `advanced.daily_tokens_max` in `~/.aouo/config.json`.';
-        await ctx.reply(
+        await replyInTopic(ctx,
           `🚫 *Token quota exhausted*\n\n${err.scope === 'session' ? 'Session' : 'Daily'} used ${err.used.toLocaleString()} / cap ${err.cap.toLocaleString()}.\n\n${recovery}`,
           { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } },
         );
       } else {
         const error = err as Error;
         logger.error({ msg: 'tg_error', chatId: ctx.chat!.id, error: error.message });
-        await ctx.reply(formatTgError(error), { link_preview_options: { is_disabled: true } });
+        await replyInTopic(ctx,formatTgError(error), { link_preview_options: { is_disabled: true } });
       }
     } finally {
       await sessionAdapter.cleanupStatus();
@@ -321,12 +372,15 @@ export class TelegramAdapter {
 
   // ── Pack Picker ───────────────────────────────────────────────────────────
 
-  private async sendPackPicker(ctx: Context, packs: string[]): Promise<void> {
-    await ctx.reply(
-      '📦 *Pick a pack to chat with*\n\nMultiple packs are installed. Choose one — you can switch later with `/use <pack>`.',
+  private async sendPackPicker(ctx: Context, packs: string[], currentPack?: string): Promise<void> {
+    const header = currentPack
+      ? `📦 *Pick a pack to chat with*\n\nCurrently: \`${currentPack}\` ✅ — tap another to switch.`
+      : '📦 *Pick a pack to chat with*\n\nMultiple packs are installed. Choose one — you can switch later with `/use <pack>`.';
+    await replyInTopic(ctx,
+      header,
       {
         parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: packPickerKeyboard(packs) },
+        reply_markup: { inline_keyboard: packPickerKeyboard(packs, currentPack) },
       },
     );
   }
@@ -388,7 +442,7 @@ export class TelegramAdapter {
 
     this.bot.command('start', async (ctx) => {
       const cmdList = [...skillCommandMap.keys()].map(c => `/${c}`).join('  ');
-      await ctx.reply(
+      await replyInTopic(ctx,
         `Hello! 👋\n\n` +
         `Send me a message, or try:\n\n` +
         `${cmdList}\n\n` +
@@ -408,9 +462,9 @@ export class TelegramAdapter {
       if (startSkill) {
         await setActiveSkill(sessionId, startSkill.name);
         const input = `[/command: ${startSkill.name}] Run the "${startSkill.name}" skill now.`;
-        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId));
+        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId), extractThreadId(ctx));
       } else {
-        await ctx.reply('🔄 Session cleared. Send a message to start.');
+        await replyInTopic(ctx,'🔄 Session cleared. Send a message to start.');
       }
     });
 
@@ -419,7 +473,7 @@ export class TelegramAdapter {
       const cancelled = this.cancelPending();
       await createSession(sessionKey);
       const extra = cancelled > 0 ? ` Cancelled ${cancelled} pending task(s).` : '';
-      await ctx.reply(`💀 Stopped.${extra}\nSession cleared — send a message to start over.`);
+      await replyInTopic(ctx,`💀 Stopped.${extra}\nSession cleared — send a message to start over.`);
       logger.info({ msg: 'tg_kill', chatId: ctx.chat.id, cancelled });
     });
 
@@ -428,44 +482,46 @@ export class TelegramAdapter {
     this.bot.command('pack', async (ctx) => {
       const packs = getLoadedPacks();
       if (packs.length === 0) {
-        await ctx.reply('⚠️ No packs are installed.');
+        await replyInTopic(ctx,'⚠️ No packs are installed.');
         return;
       }
-      await this.sendPackPicker(ctx, packs.map((p) => p.manifest.name));
+      const address = buildAddressFromTelegram(ctx);
+      const currentPack = address ? (getOrCreateRoute(address).activePack ?? undefined) : undefined;
+      await this.sendPackPicker(ctx, packs.map((p) => p.manifest.name), currentPack);
     });
 
     this.bot.command('use', async (ctx) => {
       const address = buildAddressFromTelegram(ctx);
       if (!address) {
-        await ctx.reply('⚠️ Could not determine conversation address.');
+        await replyInTopic(ctx,'⚠️ Could not determine conversation address.');
         return;
       }
       const parsed = parseUseCommand(ctx.match ?? '');
       if (!parsed) {
-        await ctx.reply('Usage: `/use <pack>` or `/use <pack>:<skill>`', { parse_mode: 'Markdown' });
+        await replyInTopic(ctx,'Usage: `/use <pack>` or `/use <pack>:<skill>`', { parse_mode: 'Markdown' });
         return;
       }
       const known = getLoadedPacks().some((p) => p.manifest.name === parsed.pack);
       if (!known) {
-        await ctx.reply(`⚠️ Pack \`${parsed.pack}\` is not loaded. Run \`/pack\` to see installed packs.`, { parse_mode: 'Markdown' });
+        await replyInTopic(ctx,`⚠️ Pack \`${parsed.pack}\` is not loaded. Run \`/pack\` to see installed packs.`, { parse_mode: 'Markdown' });
         return;
       }
       const route = getOrCreateRoute(address);
       setRoutePack(route.id, parsed.pack, parsed.skill ?? null);
       logger.info({ msg: 'tg_pack_bound', chatId: ctx.chat.id, pack: parsed.pack, skill: parsed.skill });
       const skillNote = parsed.skill ? ` with skill \`${parsed.skill}\`` : '';
-      await ctx.reply(`✅ Switched to \`${parsed.pack}\`${skillNote}. Send a message to begin.`, { parse_mode: 'Markdown' });
+      await replyInTopic(ctx,`✅ Switched to \`${parsed.pack}\`${skillNote}. Send a message to begin.`, { parse_mode: 'Markdown' });
     });
 
     this.bot.command('whereami', async (ctx) => {
       const address = buildAddressFromTelegram(ctx);
       if (!address) {
-        await ctx.reply('⚠️ Could not determine conversation address.');
+        await replyInTopic(ctx,'⚠️ Could not determine conversation address.');
         return;
       }
       const route = getOrCreateRoute(address);
       const loadedNames = getLoadedPacks().map((p) => p.manifest.name);
-      await ctx.reply(formatRouteSummary(route, loadedNames), { parse_mode: 'Markdown' });
+      await replyInTopic(ctx,formatRouteSummary(route, loadedNames), { parse_mode: 'Markdown' });
     });
 
     // Append system commands to the menu list
@@ -488,7 +544,7 @@ export class TelegramAdapter {
         const sessionId = await createSession(sessionKey);
         await setActiveSkill(sessionId, skillName);
         const input = `[/command: ${skillName}] Run the "${skillName}" skill now.`;
-        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId));
+        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId), extractThreadId(ctx));
       });
     }
 
@@ -501,7 +557,7 @@ export class TelegramAdapter {
         userId: ctx.from?.id,
         text: ctx.message.text.substring(0, 100),
       });
-      this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, ctx.message.text));
+      this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, ctx.message.text), extractThreadId(ctx));
     });
 
     // ── Voice message handler ──
@@ -531,7 +587,7 @@ export class TelegramAdapter {
         writeFileSync(audioPath, buffer);
       } catch (err) {
         logger.error({ msg: 'tg_voice_download_error', error: (err as Error).message });
-        await ctx.reply('❌ Voice download failed, please try again.');
+        await replyInTopic(ctx,'❌ Voice download failed, please try again.');
         return;
       }
 
@@ -543,7 +599,7 @@ export class TelegramAdapter {
         if (result.success && result.transcript) {
           transcript = result.transcript;
         } else {
-          await ctx.reply(`🎤 ${result.error || 'Could not recognize speech'}`);
+          await replyInTopic(ctx,`🎤 ${result.error || 'Could not recognize speech'}`);
           return;
         }
       } catch {
@@ -552,7 +608,7 @@ export class TelegramAdapter {
       }
 
       const input = `[Voice message | audio_path: ${audioPath}]\n"${transcript}"`;
-      this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input));
+      this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input), extractThreadId(ctx));
     });
 
     // ── Photo message handler ──
@@ -575,12 +631,12 @@ export class TelegramAdapter {
         const { AOUO_HOME } = await import('../../lib/paths.js');
 
         if (!photo) {
-          await ctx.reply('❌ No photo found.');
+          await replyInTopic(ctx,'❌ No photo found.');
           return;
         }
         const file = await ctx.api.getFile(photo.file_id);
         if (!file.file_path) {
-          await ctx.reply('❌ Failed to download image.');
+          await replyInTopic(ctx,'❌ Failed to download image.');
           return;
         }
 
@@ -595,7 +651,7 @@ export class TelegramAdapter {
         writeFileSync(imagePath, buffer);
       } catch (err) {
         logger.error({ msg: 'tg_photo_download_error', error: (err as Error).message });
-        await ctx.reply('❌ Image download failed, please try again.');
+        await replyInTopic(ctx,'❌ Image download failed, please try again.');
         return;
       }
 
@@ -616,14 +672,14 @@ export class TelegramAdapter {
         };
         const files: MessageFile[] = [{ path: imagePath, mimeType: mimeMap[ext] || 'image/jpeg' }];
         const input = caption ? `[Photo: "${caption}"]` : '[User sent a photo]';
-        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, files));
+        this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, files), extractThreadId(ctx));
         return;
       }
 
       const input = caption
         ? `[Photo with caption: "${caption}"]\n[Vision: ${visionDesc}]`
         : `[User sent a photo]\n[Vision: ${visionDesc}]`;
-      this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input));
+      this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input), extractThreadId(ctx));
     });
 
     // ── Callback Query Dispatcher ──
@@ -642,12 +698,17 @@ export class TelegramAdapter {
         const packName = data.substring('pack:'.length);
         const known = getLoadedPacks().some((p) => p.manifest.name === packName);
         if (!known) {
-          await ctx.reply(`⚠️ Pack \`${packName}\` is not loaded.`, { parse_mode: 'Markdown' });
+          await replyInTopic(ctx,`⚠️ Pack \`${packName}\` is not loaded.`, { parse_mode: 'Markdown' });
           return;
         }
         const address = buildAddressFromTelegram(ctx);
         if (!address) return;
         const route = getOrCreateRoute(address);
+        if (route.activePack === packName) {
+          // Already on this pack — don't churn the DB row; just acknowledge.
+          await ctx.editMessageText(`✅ \`${packName}\` is already active. Send a message to continue.`, { parse_mode: 'Markdown' }).catch(() => {});
+          return;
+        }
         setRoutePack(route.id, packName);
         logger.info({ msg: 'tg_pack_picker_bound', chatId: ctx.chat?.id, userId, pack: packName });
         await ctx.editMessageText(`✅ Switched to \`${packName}\`. Send a message to begin.`, { parse_mode: 'Markdown' }).catch(() => {});
@@ -733,7 +794,7 @@ export class TelegramAdapter {
 
       this.enqueuePerChat(chatId, async () => {
         const sessionAdapter = new TelegramSessionAdapter(
-          ctx as any, this.bot,
+          ctx as Context, this.bot,
           this.pendingApprovals, this.pendingChoices,
           this.activePolls, this.paginatedMessages,
         );
@@ -756,13 +817,15 @@ export class TelegramAdapter {
           }
         } catch (err) {
           logger.error({ msg: 'tg_callback_error', chatId, error: (err as Error).message });
+          const cbThreadId = extractThreadId(ctx as Context);
           await this.bot.api.sendMessage(chatId, formatTgError(err as Error), {
+            ...(cbThreadId ? { message_thread_id: cbThreadId } : {}),
             link_preview_options: { is_disabled: true },
           }).catch(() => {});
         } finally {
           await sessionAdapter.cleanupStatus();
         }
-      });
+      }, extractThreadId(ctx as Context));
     });
 
     // ── Poll Answer Handler (quiz feedback) ──
@@ -792,11 +855,15 @@ export class TelegramAdapter {
       this.enqueuePerChat(poll.chatId, async () => {
         const sessionKey = `tg:${poll.chatId}`;
         const sessionAdapter = new TelegramSessionAdapter(
-          ctx as any, this.bot,
+          ctx as Context, this.bot,
           this.pendingApprovals, this.pendingChoices,
           this.activePolls, this.paginatedMessages,
         );
         sessionAdapter.setChatIdOverride(poll.chatId);
+        // poll_answer events don't carry a topic — restore the originating
+        // thread from the recorded poll so the answer ack lands back in the
+        // same forum topic where the quiz was sent.
+        if (poll.threadId !== undefined) sessionAdapter.setThreadIdOverride(poll.threadId);
         const agent = this.createAgent(sessionAdapter);
 
         try {
@@ -807,7 +874,7 @@ export class TelegramAdapter {
         } catch (err) {
           logger.error({ msg: 'tg_poll_error', chatId: poll.chatId, error: (err as Error).message });
         }
-      });
+      }, poll.threadId);
 
       this.activePolls.delete(pollId);
     });
