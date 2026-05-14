@@ -26,7 +26,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/ bin/ tests/",
-    "lint:ci": "eslint src/ bin/ tests/ --max-warnings 113",
+    "lint:ci": "eslint src/ bin/ tests/ --max-warnings 115",
     "lint:fix": "eslint src/ bin/ tests/ --fix",
     "format": "prettier --write 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",

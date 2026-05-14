@@ -124,6 +124,17 @@ program
     console.log(`    Codex OAuth: ${hasCodexAuth() ? '✅ authenticated' : '⚠️  not authenticated'}`);
     console.log(`    DeepSeek key: ${config.deepseek.api_key ? '✅ configured' : '⚠️  not configured'}`);
     console.log(`    Telegram: ${config.telegram.bot_token ? '✅ configured' : '⚠️  not configured'}`);
+    if (config.telegram.bot_token) {
+      const allowlistSize = config.telegram.allowed_user_ids.length;
+      if (allowlistSize === 0) {
+        console.log(
+          `    Telegram allowlist: ❌ empty — bot will reject every message. ` +
+            `Add your numeric Telegram ID to telegram.allowed_user_ids (DM @userinfobot to find it).`,
+        );
+      } else {
+        console.log(`    Telegram allowlist: ✅ ${allowlistSize} user(s)`);
+      }
+    }
     console.log(`    Cron: ${config.cron.enabled ? '✅ enabled' : 'off'}`);
 
     console.log('');

@@ -25,7 +25,7 @@
  */
 
 import { Bot, type Context } from 'grammy';
-import { Agent, type RunResult } from '../../agent/Agent.js';
+import { Agent, RouteRequiredError, QuotaExceededError, type RunResult } from '../../agent/Agent.js';
 import { registerAllTools } from '../../tools/registry.js';
 import { logger } from '../../lib/logger.js';
 import { buildSkillIndex, getAllSkills, getSkill } from '../../packs/skillRegistry.js';
@@ -36,6 +36,18 @@ import type { AouoConfig } from '../../config/defaults.js';
 import type { MessageFile } from '../../agent/types.js';
 import type { LLMProvider } from '../../agent/types.js';
 import { createProvider } from '../../providers/index.js';
+import {
+  getOrCreateRoute,
+  setRoutePack,
+  setRouteSession,
+} from '../../storage/conversationRoutes.js';
+import {
+  buildAddressFromTelegram,
+  formatRouteSummary,
+  isUserAuthorized,
+  packPickerKeyboard,
+  parseUseCommand,
+} from './routing.js';
 
 import { TelegramSessionAdapter } from './SessionAdapter.js';
 import type { PendingApproval, PendingChoice } from './types.js';
@@ -142,13 +154,11 @@ export class TelegramAdapter {
   // ── Authorization ──────────────────────────────────────────────────────────
 
   /**
-   * Checks if a user is allowed to interact with the bot.
-   * If `allowed_user_ids` is empty, all users are allowed.
+   * Checks if a user is allowed to interact with the bot. Delegates to
+   * {@link isUserAuthorized} — empty allowlist means deny-all.
    */
   private isAuthorized(userId?: number): boolean {
-    const allowed = this.config.telegram.allowed_user_ids;
-    if (allowed.length === 0) return true;
-    return userId !== undefined && allowed.includes(userId);
+    return isUserAuthorized(this.config.telegram.allowed_user_ids, userId);
   }
 
   /**
@@ -199,14 +209,45 @@ export class TelegramAdapter {
       return;
     }
 
+    // ── Conversation route resolution ──
+    // Look up (or mint) the route row for this address, decide which pack is
+    // active, and refuse / pick when ambiguous. The agent gate (P0-NEW-14)
+    // also enforces this, but resolving here lets us present a UX-friendly
+    // picker instead of letting RouteRequiredError bubble up.
+    const address = buildAddressFromTelegram(ctx);
+    if (!address) {
+      await ctx.reply('⚠️ Could not determine conversation address. Please try again.');
+      return;
+    }
+    const route = getOrCreateRoute(address);
+    const loadedPacks = getLoadedPacks();
+
+    let activePack: string | undefined = route.activePack ?? undefined;
+    if (!activePack) {
+      if (loadedPacks.length === 0) {
+        await ctx.reply('⚠️ No packs are installed. Run `aouo pack link <path>` first.');
+        return;
+      }
+      if (loadedPacks.length === 1) {
+        // Single-pack install: silently bind so /whereami reflects reality.
+        const only = loadedPacks[0]!.manifest.name;
+        setRoutePack(route.id, only);
+        activePack = only;
+      } else {
+        await this.sendPackPicker(ctx, loadedPacks.map((p) => p.manifest.name));
+        return;
+      }
+    }
+
     const sessionKey = `tg:${ctx.chat!.id}`;
-    sessionId ??= await getOrCreateSession(sessionKey);
+    sessionId ??= route.sessionId ?? await getOrCreateSession(sessionKey);
     const typingInterval = startTypingIndicator(ctx);
 
     logger.info({
       msg: 'tg_incoming',
       chatId: ctx.chat!.id,
       userId,
+      activePack,
       input: input.substring(0, 200),
     });
 
@@ -237,7 +278,11 @@ export class TelegramAdapter {
 
     try {
       await sessionAdapter.sendThinking();
-      const result: RunResult = await agent.run(input, { sessionKey, sessionId, files });
+      const result: RunResult = await agent.run(input, { sessionKey, sessionId, files, activePack });
+
+      if (route.sessionId !== result.sessionId) {
+        setRouteSession(route.id, result.sessionId);
+      }
 
       if (!result.tgSent && result.content) {
         if (result.toolCallCount > 0) {
@@ -250,14 +295,44 @@ export class TelegramAdapter {
         await sessionAdapter.reply(result.content);
       }
     } catch (err) {
-      const error = err as Error;
-      logger.error({ msg: 'tg_error', chatId: ctx.chat!.id, error: error.message });
-      await ctx.reply(formatTgError(error), { link_preview_options: { is_disabled: true } });
+      if (err instanceof RouteRequiredError) {
+        // Defensive: agent thought the route was unresolved even after we
+        // pre-checked. Most likely cause: pack was unloaded between our
+        // lookup and the agent call. Reset route and show the picker.
+        logger.warn({ msg: 'tg_route_required', chatId: ctx.chat!.id, reason: err.reason });
+        setRoutePack(route.id, null);
+        await this.sendPackPicker(ctx, err.availablePacks);
+      } else if (err instanceof QuotaExceededError) {
+        logger.warn({ msg: 'tg_quota_exceeded', chatId: ctx.chat!.id, scope: err.scope, used: err.used, cap: err.cap });
+        const recovery = err.scope === 'session'
+          ? 'Send `/new` to start a fresh session, or raise `advanced.session_tokens_max` in `~/.aouo/config.json`.'
+          : 'Wait for midnight reset, or raise `advanced.daily_tokens_max` in `~/.aouo/config.json`.';
+        await ctx.reply(
+          `🚫 *Token quota exhausted*\n\n${err.scope === 'session' ? 'Session' : 'Daily'} used ${err.used.toLocaleString()} / cap ${err.cap.toLocaleString()}.\n\n${recovery}`,
+          { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } },
+        );
+      } else {
+        const error = err as Error;
+        logger.error({ msg: 'tg_error', chatId: ctx.chat!.id, error: error.message });
+        await ctx.reply(formatTgError(error), { link_preview_options: { is_disabled: true } });
+      }
     } finally {
       await sessionAdapter.cleanupStatus();
       clearInterval(typingInterval);
       cleanup?.();
     }
+  }
+
+  // ── Pack Picker ───────────────────────────────────────────────────────────
+
+  private async sendPackPicker(ctx: Context, packs: string[]): Promise<void> {
+    await ctx.reply(
+      '📦 *Pick a pack to chat with*\n\nMultiple packs are installed. Choose one — you can switch later with `/use <pack>`.',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: packPickerKeyboard(packs) },
+      },
+    );
   }
 
   // ── Proactive Messaging ────────────────────────────────────────────────────
@@ -287,6 +362,15 @@ export class TelegramAdapter {
    * 7. Poll answer handler
    */
   async start(): Promise<void> {
+    if (this.config.telegram.allowed_user_ids.length === 0) {
+      const warning =
+        '⚠️  telegram.allowed_user_ids is empty — every inbound message will be rejected. ' +
+        'Add your numeric Telegram user ID to ~/.aouo/config.json (telegram.allowed_user_ids) ' +
+        'or run `aouo doctor` to see how. To find your ID, message @userinfobot.';
+      logger.warn({ msg: 'tg_no_allowlist' });
+      console.warn(`[gateway] ${warning}`);
+    }
+
     await registerAllTools();
 
     // ── Discover skills and build command list ──
@@ -312,6 +396,7 @@ export class TelegramAdapter {
         `Hello! 👋\n\n` +
         `Send me a message, or try:\n\n` +
         `${cmdList}\n\n` +
+        `/pack — pick a pack  ·  /whereami — current route\n` +
         `/new — new session  ·  /kill — force stop`,
       );
     });
@@ -342,8 +427,56 @@ export class TelegramAdapter {
       logger.info({ msg: 'tg_kill', chatId: ctx.chat.id, cancelled });
     });
 
+    // ── Pack routing commands ──
+
+    this.bot.command('pack', async (ctx) => {
+      const packs = getLoadedPacks();
+      if (packs.length === 0) {
+        await ctx.reply('⚠️ No packs are installed.');
+        return;
+      }
+      await this.sendPackPicker(ctx, packs.map((p) => p.manifest.name));
+    });
+
+    this.bot.command('use', async (ctx) => {
+      const address = buildAddressFromTelegram(ctx);
+      if (!address) {
+        await ctx.reply('⚠️ Could not determine conversation address.');
+        return;
+      }
+      const parsed = parseUseCommand(ctx.match ?? '');
+      if (!parsed) {
+        await ctx.reply('Usage: `/use <pack>` or `/use <pack>:<skill>`', { parse_mode: 'Markdown' });
+        return;
+      }
+      const known = getLoadedPacks().some((p) => p.manifest.name === parsed.pack);
+      if (!known) {
+        await ctx.reply(`⚠️ Pack \`${parsed.pack}\` is not loaded. Run \`/pack\` to see installed packs.`, { parse_mode: 'Markdown' });
+        return;
+      }
+      const route = getOrCreateRoute(address);
+      setRoutePack(route.id, parsed.pack, parsed.skill ?? null);
+      logger.info({ msg: 'tg_pack_bound', chatId: ctx.chat.id, pack: parsed.pack, skill: parsed.skill });
+      const skillNote = parsed.skill ? ` with skill \`${parsed.skill}\`` : '';
+      await ctx.reply(`✅ Switched to \`${parsed.pack}\`${skillNote}. Send a message to begin.`, { parse_mode: 'Markdown' });
+    });
+
+    this.bot.command('whereami', async (ctx) => {
+      const address = buildAddressFromTelegram(ctx);
+      if (!address) {
+        await ctx.reply('⚠️ Could not determine conversation address.');
+        return;
+      }
+      const route = getOrCreateRoute(address);
+      const loadedNames = getLoadedPacks().map((p) => p.manifest.name);
+      await ctx.reply(formatRouteSummary(route, loadedNames), { parse_mode: 'Markdown' });
+    });
+
     // Append system commands to the menu list
     botCommands.push(
+      { command: 'pack', description: '📦 List / pick a pack' },
+      { command: 'use', description: '🔀 Switch active pack' },
+      { command: 'whereami', description: '📍 Show current route state' },
       { command: 'kill', description: '💀 Force stop & clear' },
     );
 
@@ -504,6 +637,26 @@ export class TelegramAdapter {
 
       // Always answer to dismiss Telegram loading spinner
       await ctx.answerCallbackQuery().catch(() => {});
+
+      // Tier 0: Pack picker — bind the chosen pack to the route. We do NOT
+      // re-invoke the agent here; the user sends their next message normally.
+      if (data.startsWith('pack:')) {
+        const userId = ctx.from?.id;
+        if (!this.isAuthorized(userId)) return;
+        const packName = data.substring('pack:'.length);
+        const known = getLoadedPacks().some((p) => p.manifest.name === packName);
+        if (!known) {
+          await ctx.reply(`⚠️ Pack \`${packName}\` is not loaded.`, { parse_mode: 'Markdown' });
+          return;
+        }
+        const address = buildAddressFromTelegram(ctx);
+        if (!address) return;
+        const route = getOrCreateRoute(address);
+        setRoutePack(route.id, packName);
+        logger.info({ msg: 'tg_pack_picker_bound', chatId: ctx.chat?.id, userId, pack: packName });
+        await ctx.editMessageText(`✅ Switched to \`${packName}\`. Send a message to begin.`, { parse_mode: 'Markdown' }).catch(() => {});
+        return;
+      }
 
       // Tier 1: Choice resolution
       if (data.startsWith('choice_')) {
