@@ -1,0 +1,42 @@
+# Create Companion Pack
+name: create
+version: 0.1.0
+display_name: Create Companion
+description: Social-media drafting assistant — captures raw thoughts, links, voice notes and turns them into platform-specific post drafts
+
+provided_skills:
+  - onboarding
+  - capture
+  - ingest-url
+  - prompt-me
+  - draft-post
+
+schema:
+  file: schema.sql
+  owned_tables:
+    - materials
+    - posts
+    - voices
+
+persist_contract:
+  skill_type_prefix: "create."
+  required_fields:
+    - skill_type
+    - content
+  optional_fields:
+    - tags
+    - metadata
+
+cron_defaults:
+  - id: evening-prompt
+    schedule: "0 21 * * *"
+    skill: prompt-me
+    enabled_by_default: true
+  - id: morning-draft
+    schedule: "0 9 * * *"
+    skill: draft-post
+    enabled_by_default: false
+
+permissions:
+  cron: true
+  web_search: true

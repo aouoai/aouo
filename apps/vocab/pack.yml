@@ -1,0 +1,45 @@
+# Vocab Pack
+name: vocab
+version: 0.1.0
+display_name: Vocab Trainer
+description: English vocabulary trainer — CEFR placement plus customizable spaced-repetition (1d/3d/7d/14d/30d/60d or your own curve)
+
+provided_skills:
+  - onboarding
+  - assess
+  - study
+  - add
+  - report
+
+schema:
+  file: schema.sql
+  owned_tables:
+    - words
+    - user_state
+    - cards
+    - intervals
+    - reviews
+    - assessment_items
+    - assessment_runs
+
+persist_contract:
+  skill_type_prefix: "vocab."
+  required_fields:
+    - skill_type
+    - content
+  optional_fields:
+    - tags
+    - metadata
+
+cron_defaults:
+  - id: daily-study
+    schedule: "0 8 * * *"
+    skill: study
+    enabled_by_default: true
+  - id: weekly-report
+    schedule: "0 10 * * 0"
+    skill: report
+    enabled_by_default: false
+
+permissions:
+  cron: true
