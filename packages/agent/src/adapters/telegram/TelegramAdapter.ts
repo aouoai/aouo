@@ -37,9 +37,12 @@ import type { MessageFile } from '../../agent/types.js';
 import type { LLMProvider } from '../../agent/types.js';
 import { createProvider } from '../../providers/index.js';
 import {
+  conversationSessionKey,
   getOrCreateRoute,
   setRoutePack,
   setRouteSession,
+  type ConversationAddress,
+  type ConversationRoute,
 } from '../../storage/conversationRoutes.js';
 import {
   buildAddressFromTelegram,
@@ -297,11 +300,46 @@ export class TelegramAdapter {
   }
 
   /**
-   * Finds the first loaded pack that hasn't completed onboarding.
-   * Returns null if all packs are onboarded or none are loaded.
+   * Resolve the conversation route for an inbound event into a tuple ready
+   * for downstream session work. All TG callsites that need to invoke the
+   * agent or persist a session MUST go through this helper instead of
+   * fabricating their own `tg:<chatId>` keys — those keys are chat-wide
+   * and leak history across forum topics inside the same supergroup.
+   *
+   * The returned `sessionKey` is `null` when no pack is bound; callers
+   * decide whether to refuse the action (skill commands), clear the
+   * route-bound session (`/new`, `/kill`), or fall back to a chat-level
+   * key (callbacks in zero-pack mode).
    */
-  private getUnonboardedPack() {
-    return getLoadedPacks().find(p => !p.onboarded) ?? null;
+  private resolveRouteContext(ctx: Context): {
+    address: ConversationAddress;
+    route: ConversationRoute;
+    activePack: string | null;
+    sessionKey: string | null;
+  } | null {
+    const address = buildAddressFromTelegram(ctx);
+    if (!address) return null;
+    const route = getOrCreateRoute(address);
+    const activePack = route.activePack;
+    const sessionKey = activePack ? conversationSessionKey(address, activePack) : null;
+    return { address, route, activePack, sessionKey };
+  }
+
+  /**
+   * Variant of {@link resolveRouteContext} for events that don't carry a
+   * Grammy Context whose `chat`/`message` fields would yield the address
+   * — currently only `poll_answer`, which reaches us with just the saved
+   * `(chatId, threadId)` from the originating quiz.
+   */
+  private resolveRouteContextByAddress(address: ConversationAddress): {
+    route: ConversationRoute;
+    activePack: string | null;
+    sessionKey: string | null;
+  } {
+    const route = getOrCreateRoute(address);
+    const activePack = route.activePack;
+    const sessionKey = activePack ? conversationSessionKey(address, activePack) : null;
+    return { route, activePack, sessionKey };
   }
 
   /**
@@ -400,7 +438,17 @@ export class TelegramAdapter {
       return;
     }
 
-    const sessionKey = `tg:${ctx.chat!.id}`;
+    // Pack-scoped sessionKey is the fix for the topic cross-talk bug:
+    // a supergroup's topics share `chat.id`, so a bare `tg:<chat>` key
+    // means the first /new in topic A burns into topic B's session.
+    // `conversationSessionKey(address, activePack)` produces a key like
+    // `tg:<chat>:thread:<topic>:pack:<name>` so each (topic, pack) gets
+    // its own session history. Zero-pack mode still uses the chat-level
+    // key — there's no pack to isolate by, and the general-purpose
+    // runtime is single-route by definition.
+    const sessionKey = activePack
+      ? conversationSessionKey(address, activePack)
+      : `tg:${ctx.chat!.id}`;
     sessionId ??= route.sessionId ?? await getOrCreateSession(sessionKey);
     const typingInterval = startTypingIndicator(ctx);
 
@@ -408,7 +456,11 @@ export class TelegramAdapter {
       msg: 'tg_incoming',
       chatId: ctx.chat!.id,
       userId,
+      threadId: route.address.threadId,
+      routeId: route.id,
       activePack,
+      sessionKey,
+      sessionId,
       input: input.substring(0, 200),
     });
 
@@ -422,19 +474,26 @@ export class TelegramAdapter {
     const agent = this.createAgent(sessionAdapter);
 
     // ── Onboarding guard (§4.2) ──
-    // If any loaded pack hasn't been onboarded, force-activate its
-    // onboarding skill so the user completes initial setup first.
-    const unonboarded = this.getUnonboardedPack();
-    if (unonboarded) {
-      const onboardingSkill = getSkill(`${unonboarded.manifest.name}:onboarding`)
-        || getSkill('onboarding');
-      if (onboardingSkill) {
-        await setActiveSkill(sessionId, onboardingSkill.name);
-        logger.info({
-          msg: 'onboarding_forced',
-          pack: unonboarded.manifest.name,
-          skill: onboardingSkill.name,
-        });
+    // Only force onboarding for the route's *active* pack — checking
+    // every loaded pack and bailing on the first unonboarded one cross-
+    // contaminated topics whose own pack was already onboarded. Likewise,
+    // never fall back to bare `getSkill('onboarding')`: multiple packs
+    // may ship an `onboarding` skill, and the unnamespaced lookup gets
+    // whichever was registered last.
+    if (activePack) {
+      const active = getLoadedPacks().find(p => p.manifest.name === activePack);
+      if (active && !active.onboarded) {
+        const onboardingSkill = getSkill(`${activePack}:onboarding`);
+        if (onboardingSkill) {
+          await setActiveSkill(sessionId, onboardingSkill.name);
+          logger.info({
+            msg: 'onboarding_forced',
+            pack: activePack,
+            threadId: route.address.threadId,
+            routeId: route.id,
+            skill: onboardingSkill.name,
+          });
+        }
       }
     }
 
@@ -673,29 +732,72 @@ export class TelegramAdapter {
     });
 
     this.bot.command('new', async (ctx) => {
-      const sessionKey = `tg:${ctx.chat.id}`;
       this.cancelPending();
-      const sessionId = await createSession(sessionKey);
-      logger.info({ msg: 'tg_new_session', chatId: ctx.chat.id });
+      const resolved = this.resolveRouteContext(ctx);
+      if (!resolved) {
+        await replyInTopic(ctx, '⚠️ Could not determine conversation address.');
+        return;
+      }
+      const { route, activePack, sessionKey } = resolved;
 
-      // Try to activate the default start skill (if packs define one)
-      const startSkill = skills.find(s => s.name === 'planner') || skills[0];
+      // No activePack: just clear the route's session pointer; the next
+      // inbound message will mint a fresh session (or show the picker
+      // when multi-pack and unbound).
+      if (!activePack || !sessionKey) {
+        setRouteSession(route.id, null);
+        const hint = getLoadedPacks().length > 1
+          ? '🔄 Session cleared. Pick a pack with `/pack` to start.'
+          : '🔄 Session cleared. Send a message to start.';
+        await replyInTopic(ctx, hint, { parse_mode: 'Markdown' });
+        logger.info({
+          msg: 'tg_new_session',
+          chatId: ctx.chat.id,
+          threadId: route.address.threadId,
+          routeId: route.id,
+          pack: null,
+        });
+        return;
+      }
+
+      const sessionId = await createSession(sessionKey);
+      setRouteSession(route.id, sessionId);
+      logger.info({
+        msg: 'tg_new_session',
+        chatId: ctx.chat.id,
+        threadId: route.address.threadId,
+        routeId: route.id,
+        pack: activePack,
+        sessionId,
+      });
+
+      // Pack-scoped lookup avoids the cross-pack `planner` collision
+      // (multiple packs may register the same short name). Falls back
+      // to the first skill owned by this pack so /new still does
+      // something useful even when there's no canonical entry point.
+      const startSkill = skills.find(s => s.name === `${activePack}:planner`)
+        ?? skills.find(s => s.name.startsWith(`${activePack}:`));
       if (startSkill) {
         await setActiveSkill(sessionId, startSkill.name);
         const input = `[/command: ${startSkill.name}] Run the "${startSkill.name}" skill now.`;
         this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId), extractThreadId(ctx));
       } else {
-        await replyInTopic(ctx,'🔄 Session cleared. Send a message to start.');
+        await replyInTopic(ctx, '🔄 Session cleared. Send a message to start.');
       }
     });
 
     this.bot.command('kill', async (ctx) => {
-      const sessionKey = `tg:${ctx.chat.id}`;
       const cancelled = this.cancelPending();
-      await createSession(sessionKey);
+      const resolved = this.resolveRouteContext(ctx);
+      if (resolved) setRouteSession(resolved.route.id, null);
       const extra = cancelled > 0 ? ` Cancelled ${cancelled} pending task(s).` : '';
-      await replyInTopic(ctx,`💀 Stopped.${extra}\nSession cleared — send a message to start over.`);
-      logger.info({ msg: 'tg_kill', chatId: ctx.chat.id, cancelled });
+      await replyInTopic(ctx, `💀 Stopped.${extra}\nSession cleared — send a message to start over.`);
+      logger.info({
+        msg: 'tg_kill',
+        chatId: ctx.chat.id,
+        threadId: resolved?.route.address.threadId,
+        routeId: resolved?.route.id,
+        cancelled,
+      });
     });
 
     // ── Pack routing commands ──
@@ -767,10 +869,43 @@ export class TelegramAdapter {
 
     for (const [cmd, skillName] of skillCommandMap) {
       this.bot.command(cmd, async (ctx) => {
-        logger.info({ msg: 'tg_skill_cmd', chatId: ctx.chat.id, skill: skillName });
-        const sessionKey = `tg:${ctx.chat.id}`;
+        const resolved = this.resolveRouteContext(ctx);
+        if (!resolved) {
+          await replyInTopic(ctx, '⚠️ Could not determine conversation address.');
+          return;
+        }
+        const { route, activePack, sessionKey } = resolved;
+        if (!activePack || !sessionKey) {
+          await replyInTopic(ctx, '⚠️ Pick a pack first with `/pack` or `/use <pack>`.', { parse_mode: 'Markdown' });
+          return;
+        }
+
+        // Reject cross-pack skill commands. Skill names are
+        // namespaced as `<pack>:<short>`; invoking a vocab skill in
+        // a notes-bound topic just because the bot accepts the
+        // command would be the very cross-talk we're trying to fix.
+        const skillPack = skillName.split(':')[0];
+        if (skillPack && skillPack !== activePack) {
+          await replyInTopic(
+            ctx,
+            `⚠️ \`/${cmd}\` belongs to pack \`${skillPack}\` but this route is bound to \`${activePack}\`. Run \`/use ${skillPack}\` to switch first.`,
+            { parse_mode: 'Markdown' },
+          );
+          return;
+        }
+
         const sessionId = await createSession(sessionKey);
+        setRouteSession(route.id, sessionId);
         await setActiveSkill(sessionId, skillName);
+        logger.info({
+          msg: 'tg_skill_cmd',
+          chatId: ctx.chat.id,
+          threadId: route.address.threadId,
+          routeId: route.id,
+          pack: activePack,
+          skill: skillName,
+          sessionId,
+        });
         const input = `[/command: ${skillName}] Run the "${skillName}" skill now.`;
         this.enqueuePerChat(ctx.chat.id, () => this.handleIncoming(ctx, input, undefined, undefined, sessionId), extractThreadId(ctx));
       });
@@ -1046,12 +1181,28 @@ export class TelegramAdapter {
       const chatId = ctx.callbackQuery.message?.chat?.id;
       if (!chatId) return;
 
-      const sessionKey = `tg:${chatId}`;
+      // Re-resolve the route from the callback's originating message so
+      // the agent run uses the topic/pack-scoped sessionKey instead of
+      // the chat-wide `tg:<chatId>`. Without this, a callback fired in
+      // topic A would resume topic B's session.
+      const resolved = this.resolveRouteContext(ctx as Context);
+      if (!resolved) return;
+      const { route, activePack, sessionKey: routeSessionKey } = resolved;
+      // Zero-pack mode (or skill-switch from picker) falls back to a
+      // topic-aware chat key so the route still has somewhere to live.
+      const sessionKey = routeSessionKey
+        ?? (route.address.threadId
+          ? `tg:${chatId}:thread:${route.address.threadId}`
+          : `tg:${chatId}`);
       const agentInput = `[callback] ${data}`;
 
       logger.info({
         msg: 'tg_callback',
         chatId, userId, data,
+        threadId: route.address.threadId,
+        routeId: route.id,
+        pack: activePack,
+        sessionKey,
         label: selectedLabel,
         skillSwitch: isSkillSwitch,
       });
@@ -1061,7 +1212,7 @@ export class TelegramAdapter {
           ctx as Context, this.bot,
           this.pendingApprovals, this.pendingChoices,
           this.activePolls, this.paginatedMessages,
-          this.resolvePackBadgeArgs(ctx as Context),
+          this.resolvePackBadgeArgs(ctx as Context, activePack),
         );
 
         const agent = this.createAgent(sessionAdapter);
@@ -1072,9 +1223,11 @@ export class TelegramAdapter {
             sessionKey,
             onToken: (delta: string) => sessionAdapter.streamingReply(delta),
           };
+          if (activePack) runOpts.activePack = activePack;
 
           if (isSkillSwitch) {
             const newSid = await createSession(sessionKey);
+            setRouteSession(route.id, newSid);
             await setActiveSkill(newSid, data);
             runOpts.sessionId = newSid;
           }
@@ -1119,15 +1272,38 @@ export class TelegramAdapter {
         ? `[Quiz answer] User answered: "${selectedOption}" ✅ Correct`
         : `[Quiz answer] User answered: "${selectedOption}" ❌ Wrong (correct: "${correctOption}")`;
 
-      logger.info({ msg: 'tg_poll_answer', chatId: poll.chatId, userId, pollId, isCorrect });
+      // poll_answer doesn't reach us with a chat-bearing context; rebuild
+      // the originating address from the saved poll so we can reuse the
+      // pack-scoped sessionKey and route binding.
+      const pollAddress: ConversationAddress = {
+        platform: 'tg',
+        chatId: String(poll.chatId),
+        ...(poll.threadId !== undefined ? { threadId: String(poll.threadId) } : {}),
+      };
+      const pollRoute = this.resolveRouteContextByAddress(pollAddress);
+      const pollSessionKey = pollRoute.sessionKey
+        ?? (poll.threadId !== undefined
+          ? `tg:${poll.chatId}:thread:${poll.threadId}`
+          : `tg:${poll.chatId}`);
+
+      logger.info({
+        msg: 'tg_poll_answer',
+        chatId: poll.chatId,
+        threadId: poll.threadId,
+        routeId: pollRoute.route.id,
+        pack: pollRoute.activePack,
+        sessionKey: pollSessionKey,
+        userId,
+        pollId,
+        isCorrect,
+      });
 
       this.enqueuePerChat(poll.chatId, async () => {
-        const sessionKey = `tg:${poll.chatId}`;
         const sessionAdapter = new TelegramSessionAdapter(
           ctx as Context, this.bot,
           this.pendingApprovals, this.pendingChoices,
           this.activePolls, this.paginatedMessages,
-          this.resolvePackBadgeArgs(ctx as Context),
+          { activePack: pollRoute.activePack, showPackBadge: false },
         );
         sessionAdapter.setChatIdOverride(poll.chatId);
         // poll_answer events don't carry a topic — restore the originating
@@ -1137,10 +1313,12 @@ export class TelegramAdapter {
         const agent = this.createAgent(sessionAdapter);
 
         try {
-          const result: RunResult = await agent.run(input, {
-            sessionKey,
-            onToken: (delta) => sessionAdapter.streamingReply(delta),
-          });
+          const runOpts: Record<string, unknown> = {
+            sessionKey: pollSessionKey,
+            onToken: (delta: string) => sessionAdapter.streamingReply(delta),
+          };
+          if (pollRoute.activePack) runOpts.activePack = pollRoute.activePack;
+          const result: RunResult = await agent.run(input, runOpts as any);
           await sessionAdapter.finalizeStreamingReply();
           if (!result.tgSent && result.content) {
             await sessionAdapter.reply(result.content);

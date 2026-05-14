@@ -137,4 +137,39 @@ describe('conversationRoutes', () => {
       'tg:-100abc:thread:7:user:900:pack:notes',
     );
   });
+
+  it('topic + pack scoping prevents session cross-talk in a shared supergroup', async () => {
+    // Regression for the production bug where two forum topics inside the
+    // same supergroup shared a single `tg:<chatId>` session — the first
+    // bound `activePack` would burn into every subsequent topic.
+    const chat = `chat-cross-${Date.now()}`;
+    const general = getOrCreateRoute({ platform: 'tg', chatId: chat });
+    const topicA = getOrCreateRoute({ platform: 'tg', chatId: chat, threadId: 't-A' });
+    const topicB = getOrCreateRoute({ platform: 'tg', chatId: chat, threadId: 't-B' });
+
+    setRoutePack(general.id, 'notes');
+    setRoutePack(topicA.id, 'vocab');
+    setRoutePack(topicB.id, 'create');
+
+    const keyGeneral = conversationSessionKey(general.address, 'notes');
+    const keyA = conversationSessionKey(topicA.address, 'vocab');
+    const keyB = conversationSessionKey(topicB.address, 'create');
+
+    expect(new Set([keyGeneral, keyA, keyB]).size).toBe(3);
+
+    const sidGeneral = await createSession(keyGeneral);
+    const sidA = await createSession(keyA);
+    const sidB = await createSession(keyB);
+    expect(new Set([sidGeneral, sidA, sidB]).size).toBe(3);
+  });
+
+  it('swapping the active pack on the same route mints a fresh session key', () => {
+    // Same physical address, two different packs — must NOT collide. This
+    // protects against a regression where the adapter caches the pre-swap
+    // sessionKey somewhere downstream and leaks history into the new pack.
+    const addr: ConversationAddress = { platform: 'tg', chatId: `chat-swap-${Date.now()}` };
+    expect(conversationSessionKey(addr, 'vocab')).not.toBe(
+      conversationSessionKey(addr, 'notes'),
+    );
+  });
 });
