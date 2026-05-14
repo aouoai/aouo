@@ -13,6 +13,7 @@
  */
 
 import { Command } from 'commander';
+import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -253,11 +254,12 @@ const gateway = program
   .command('gateway')
   .description('Manage the Telegram bot gateway');
 
-gateway
-  .command('start')
-  .description('Start the Telegram bot (long-polling mode)')
-  .action(async () => {
-    const { isServiceRunning } = await import('../src/lib/pidfile.js');
+async function runGatewayStart(): Promise<void> {
+  const { isServiceRunning } = await import('../src/lib/pidfile.js');
+  const { isDaemonChild, spawnDetachedChild, daemonLogPath } = await import('../src/lib/daemonize.js');
+
+  if (!isDaemonChild()) {
+    // ── Parent path: validate, spawn detached daemon, exit. ──
     const { running, pid } = isServiceRunning('gateway');
     if (running) {
       console.log(`⚠️  Gateway is already running (PID ${pid}).`);
@@ -266,12 +268,8 @@ gateway
       return;
     }
 
-    console.log('🚀 Starting aouo gateway...\n');
-
     const { loadConfig } = await import('../src/config/loader.js');
-    const { ensureDirectories, PACKS_DIR } = await import('../src/lib/paths.js');
-    const { loadAllPacks } = await import('../src/packs/loader.js');
-
+    const { ensureDirectories } = await import('../src/lib/paths.js');
     ensureDirectories();
     const config = loadConfig();
 
@@ -282,22 +280,53 @@ gateway
       return;
     }
 
-    // Load all installed packs
-    await loadAllPacks([PACKS_DIR, ...config.packs.scan_dirs], config.packs.enabled, config);
+    const { logPath } = spawnDetachedChild('gateway', ['gateway', 'start']);
+    // Wait for the child to either write its pidfile (success) or die (failure).
+    await new Promise((r) => setTimeout(r, 800));
+    const after = isServiceRunning('gateway');
+    if (!after.running) {
+      console.log(`❌ Gateway failed to start. Check logs: ${daemonLogPath('gateway')}`);
+      process.exitCode = 1;
+      return;
+    }
 
-    const { TelegramAdapter } = await import('../src/adapters/telegram/TelegramAdapter.js');
-    const adapter = new TelegramAdapter(config);
+    console.log(`✅ Gateway started in background (PID ${after.pid}).`);
+    console.log(`   Logs: ${logPath}`);
+    console.log(`   Stop: aouo gateway stop`);
+    return;
+  }
 
-    // Graceful shutdown
-    const shutdown = () => {
-      console.log('\n[gateway] Shutting down...');
-      adapter.stop();
-      process.exit(0);
-    };
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
+  // ── Child path: actually run the service. ──
+  const { writePid, removePid } = await import('../src/lib/pidfile.js');
+  writePid('gateway');
 
-    await adapter.start();
+  const { loadConfig } = await import('../src/config/loader.js');
+  const { ensureDirectories, PACKS_DIR } = await import('../src/lib/paths.js');
+  const { loadAllPacks } = await import('../src/packs/loader.js');
+
+  ensureDirectories();
+  const config = loadConfig();
+  await loadAllPacks([PACKS_DIR, ...config.packs.scan_dirs], config.packs.enabled, config);
+
+  const { TelegramAdapter } = await import('../src/adapters/telegram/TelegramAdapter.js');
+  const adapter = new TelegramAdapter(config);
+
+  const shutdown = () => {
+    adapter.stop();
+    removePid('gateway');
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  await adapter.start();
+}
+
+gateway
+  .command('start')
+  .description('Start the Telegram bot in the background (long-polling)')
+  .action(async () => {
+    await runGatewayStart();
   });
 
 gateway
@@ -347,39 +376,194 @@ gateway
       console.log(`[gateway] Stopping PID ${pid}...`);
       await stopService('gateway');
       console.log('✅ Stopped.');
-      // Brief pause to let port release
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
     }
 
-    console.log('🚀 Restarting aouo gateway...\n');
+    await runGatewayStart();
+  });
 
-    const { loadConfig } = await import('../src/config/loader.js');
-    const { ensureDirectories, PACKS_DIR } = await import('../src/lib/paths.js');
-    const { loadAllPacks } = await import('../src/packs/loader.js');
+gateway
+  .command('logs')
+  .description('Print the path of the gateway log file')
+  .action(async () => {
+    const { daemonLogPath } = await import('../src/lib/daemonize.js');
+    console.log(daemonLogPath('gateway'));
+  });
 
-    ensureDirectories();
-    const config = loadConfig();
+// ── ui ───────────────────────────────────────────────────────────────────────
 
-    if (!config.telegram?.bot_token) {
-      console.log('❌ Telegram bot token not configured.');
-      process.exitCode = 1;
+const DEFAULT_UI_PORT = 9800;
+
+function openBrowser(url: string): void {
+  const platform = process.platform;
+  const cmd =
+    platform === 'darwin' ? 'open' : platform === 'win32' ? 'start' : 'xdg-open';
+  try {
+    const child = spawn(cmd, [url], { detached: true, stdio: 'ignore' });
+    child.unref();
+  } catch {
+    // Browser launch is best-effort — the URL is printed regardless.
+  }
+}
+
+function resolveDashboardDir(): string | undefined {
+  // Built artifact: dist/bin/aouo.js → dist/dashboard/.
+  // Dev tree (tsx): bin/aouo.ts → ../../dashboard/dist (packages/dashboard/dist).
+  const candidates = [
+    join(import.meta.dirname, '..', 'dashboard'),
+    join(import.meta.dirname, '..', '..', 'dashboard', 'dist'),
+  ];
+  return candidates.find((dir) => existsSync(join(dir, 'index.html')));
+}
+
+const ui = program.command('ui').description('Local dashboard server (web UI for config, status, packs)');
+
+interface UiStartOptions {
+  port?: string;
+  open?: boolean;
+}
+
+/**
+ * UI is intentionally foreground-only — the local dashboard is a single-user
+ * admin console and must NOT survive the operator's interactive session.
+ * Closing the terminal (SIGHUP), Ctrl+C (SIGINT), or kill (SIGTERM) all
+ * tear it down cleanly.
+ *
+ * Gateway is different and IS daemonized: it serves the Telegram bot, which
+ * has its own auth (allowlist) and is meant to run 24/7.
+ */
+async function runUiStart(options: UiStartOptions): Promise<void> {
+  const { isServiceRunning, writePid, removePid } = await import('../src/lib/pidfile.js');
+  const { running, pid } = isServiceRunning('ui');
+  if (running) {
+    console.log(`⚠️  Dashboard is already running (PID ${pid}).`);
+    console.log(`   Stop the other instance with "aouo ui stop", or attach to its terminal.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const { ensureDirectories } = await import('../src/lib/paths.js');
+  ensureDirectories();
+
+  const { startUiServer } = await import('../src/server/index.js');
+  const port = Number(options.port ?? DEFAULT_UI_PORT) || DEFAULT_UI_PORT;
+  const dashboardDir = resolveDashboardDir();
+
+  if (!dashboardDir) {
+    console.log('ℹ️  Dashboard bundle not found. Serving API only.');
+    console.log('   Run `pnpm --filter @aouo/dashboard build` to generate the SPA.');
+  }
+
+  // AOUO_UI_TOKEN env var pins the auth token, which is useful when running
+  // Vite dev (HMR) against this server: both sides agree on a known token.
+  // Unset → a fresh 32-byte hex token is minted every boot (production default).
+  const devToken = process.env['AOUO_UI_TOKEN'];
+
+  let handle;
+  try {
+    handle = await startUiServer({ port, dashboardDir, ...(devToken ? { token: devToken } : {}) });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EADDRINUSE') {
+      console.log(`❌ Port ${port} is already in use. Pass --port <n> to choose another.`);
+    } else {
+      console.log(`❌ Failed to start dashboard: ${(err as Error).message}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  writePid('ui');
+  console.log('🖥️  aouo dashboard running (foreground)');
+  console.log(`   URL:  ${handle.url}`);
+  console.log(`   Port: ${handle.port} (bound to 127.0.0.1)`);
+  console.log(`   Bundle: ${dashboardDir ?? '(API only — no SPA)'}`);
+  if (devToken) {
+    console.log(`   Dev URL (vite HMR): http://127.0.0.1:5173/?token=${devToken}`);
+  }
+  console.log(`   ⚠️  Closing this terminal or Ctrl+C will stop the dashboard.\n`);
+
+  if (options.open !== false) {
+    openBrowser(handle.url);
+  }
+
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n[ui] Received ${signal}, shutting down...`);
+    handle
+      .stop()
+      .catch(() => undefined)
+      .finally(() => {
+        removePid('ui');
+        process.exit(0);
+      });
+  };
+  // SIGHUP fires when the controlling terminal closes (window close, ssh
+  // disconnect, parent shell exit). Default Node behavior would also
+  // terminate, but installing a handler lets us drop the pidfile cleanly.
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGHUP', () => shutdown('SIGHUP'));
+}
+
+ui
+  .command('start', { isDefault: true })
+  .description('Start the dashboard (foreground — Ctrl+C or terminal close stops it)')
+  .option('-p, --port <number>', 'Port to bind on 127.0.0.1', String(DEFAULT_UI_PORT))
+  .option('--no-open', 'Do not auto-open the browser')
+  .action(async (options: UiStartOptions) => {
+    await runUiStart(options);
+  });
+
+ui
+  .command('stop')
+  .description('Stop the running dashboard')
+  .action(async () => {
+    const { isServiceRunning, stopService } = await import('../src/lib/pidfile.js');
+    const { running, pid } = isServiceRunning('ui');
+    if (!running) {
+      console.log('ℹ️  Dashboard is not running.');
       return;
     }
+    console.log(`[ui] Stopping PID ${pid}...`);
+    const stopped = await stopService('ui');
+    if (stopped) {
+      console.log('✅ Dashboard stopped.');
+    } else {
+      console.log('⚠️  Could not stop dashboard. Process may have already exited.');
+    }
+  });
 
-    await loadAllPacks([PACKS_DIR, ...config.packs.scan_dirs], config.packs.enabled, config);
+ui
+  .command('status')
+  .description('Check if the dashboard is running')
+  .action(async () => {
+    const { isServiceRunning } = await import('../src/lib/pidfile.js');
+    const { running, pid } = isServiceRunning('ui');
+    if (running) {
+      console.log(`✅ Dashboard is running (PID ${pid}).`);
+    } else {
+      console.log('⏹️  Dashboard is not running.');
+    }
+  });
 
-    const { TelegramAdapter } = await import('../src/adapters/telegram/TelegramAdapter.js');
-    const adapter = new TelegramAdapter(config);
-
-    const shutdown = () => {
-      console.log('\n[gateway] Shutting down...');
-      adapter.stop();
-      process.exit(0);
-    };
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-
-    await adapter.start();
+ui
+  .command('restart')
+  .description('Restart the dashboard (stop + start)')
+  .option('-p, --port <number>', 'Port to bind on 127.0.0.1', String(DEFAULT_UI_PORT))
+  .option('--no-open', 'Do not auto-open the browser')
+  .action(async (options: UiStartOptions) => {
+    const { isServiceRunning, stopService } = await import('../src/lib/pidfile.js');
+    const { running, pid } = isServiceRunning('ui');
+    if (running) {
+      console.log(`[ui] Stopping PID ${pid}...`);
+      await stopService('ui');
+      console.log('✅ Stopped.');
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    await runUiStart(options);
   });
 
 program.parse();

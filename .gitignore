@@ -12,8 +12,19 @@ dist/
 coverage/
 .eslintcache
 .vitest-cache/
-docs/.vitepress/cache/
-docs/.vitepress/dist/
+.astro/
+.vite/
+.cache/
+.turbo/
+.parcel-cache/
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# Deployment tool output
+.wrangler/
+.vercel/
+.netlify/
 
 # Environment & local overrides
 .env

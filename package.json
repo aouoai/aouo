@@ -5,7 +5,12 @@
   "description": "aouo monorepo root — workspace meta for @aouo/agent, @aouo/dashboard, docs.",
   "type": "module",
   "scripts": {
-    "build": "pnpm -r build",
+    "dev": "pnpm --parallel --filter @aouo/agent --filter @aouo/dashboard dev",
+    "dev:agent": "pnpm --filter @aouo/agent dev",
+    "dev:dashboard": "pnpm --filter @aouo/dashboard dev",
+    "dev:ui": "AOUO_UI_TOKEN=devtoken node packages/agent/dist/bin/aouo.js ui start --no-open",
+    "build": "pnpm --filter @aouo/dashboard build && pnpm --filter @aouo/agent build",
+    "build:agent": "pnpm --filter @aouo/agent build",
     "test": "pnpm -r test",
     "test:coverage": "pnpm -r test:coverage",
     "lint": "pnpm -r lint",
@@ -14,9 +19,10 @@
     "typecheck": "pnpm -r typecheck",
     "format": "prettier --write 'packages/**/*.{ts,tsx}'",
     "format:check": "prettier --check 'packages/**/*.{ts,tsx}'",
-    "docs:dev": "cd docs && mint dev",
-    "docs:build": "cd docs && mint build",
-    "docs:validate": "cd docs && mint validate"
+    "docs:dev": "pnpm --filter @aouo/docs dev",
+    "docs:build": "pnpm --filter @aouo/docs build",
+    "docs:preview": "pnpm --filter @aouo/docs preview",
+    "docs:validate": "pnpm --filter @aouo/docs build"
   },
   "repository": {
     "type": "git",

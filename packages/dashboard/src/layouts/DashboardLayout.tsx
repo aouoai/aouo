@@ -1,99 +1,127 @@
 import { cn } from '@/lib/utils'
 import {
-  Layers,
-  Wrench,
-  MessageSquare,
-  Settings,
-  Shield,
-  Package,
   Activity,
+  Cpu,
+  Gauge,
+  LayoutDashboard,
+  MessageSquare,
+  Package,
+  Settings2,
+  Shield,
+  Wrench,
 } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { Separator } from '@/components/ui/separator'
+import { Topbar } from '@/components/topbar'
 
-const NAV_ITEMS = [
-  { to: '/provider', label: 'Provider', icon: Layers },
+type NavItem = { to: string; label: string; icon: typeof Activity; end?: boolean }
+
+const NAV_PRIMARY: NavItem[] = [
+  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
+]
+
+const NAV_CONFIGURE: NavItem[] = [
+  { to: '/provider', label: 'Provider', icon: Cpu },
   { to: '/tools', label: 'Tools', icon: Wrench },
   { to: '/channels', label: 'Channels', icon: MessageSquare },
-  { to: '/advanced', label: 'Advanced', icon: Settings },
   { to: '/security', label: 'Security', icon: Shield },
-] as const
+  { to: '/advanced', label: 'Advanced', icon: Settings2 },
+]
 
-const NAV_SECONDARY = [
+const NAV_OBSERVE: NavItem[] = [
+  { to: '/status', label: 'Status', icon: Gauge },
   { to: '/packs', label: 'Packs', icon: Package },
-  { to: '/status', label: 'Status', icon: Activity },
-] as const
+]
 
 export function DashboardLayout() {
   return (
     <div className="flex h-screen bg-background">
-      {/* Sidebar */}
       <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar">
-        {/* Header */}
-        <div className="border-b px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl text-primary">⬡</span>
-            <span className="text-lg font-bold tracking-tight">aouo</span>
-          </div>
-          <span className="mt-1 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-            dashboard
-          </span>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex flex-1 flex-col gap-0.5 p-2.5">
-          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13.5px] font-medium transition-colors',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
-                )
-              }
-            >
-              <Icon className="size-[18px]" />
-              {label}
-            </NavLink>
-          ))}
-
-          <Separator className="my-2" />
-
-          {NAV_SECONDARY.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13.5px] font-medium transition-colors',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
-                )
-              }
-            >
-              <Icon className="size-[18px]" />
-              {label}
-            </NavLink>
-          ))}
+        <SidebarHeader />
+        <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
+          <NavList items={NAV_PRIMARY} />
+          <NavGroup label="Configure" items={NAV_CONFIGURE} />
+          <NavGroup label="Observe" items={NAV_OBSERVE} />
         </nav>
-
-        {/* Footer */}
-        <div className="flex items-center gap-2 border-t px-4 py-3 text-xs text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-green-500 shadow-[0_0_6px] shadow-green-500/50" />
-          <span>v0.0.1</span>
-        </div>
+        <SidebarFooter />
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl px-10 py-9">
-          <Outlet />
-        </div>
-      </main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Topbar />
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-5xl px-8 py-7">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
+  )
+}
+
+function SidebarHeader() {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3.5">
+      <img src="/logo.svg" alt="AOUO" className="size-7" />
+      <div className="flex min-w-0 flex-col leading-tight">
+        <span className="text-[15px] font-semibold tracking-[0.04em]">AOUO</span>
+        <span className="text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
+          Dashboard
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function SidebarFooter() {
+  return (
+    <div className="border-t px-4 py-3">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span>Connected</span>
+        </span>
+        <span className="font-mono text-muted-foreground">v0.0.1</span>
+      </div>
+    </div>
+  )
+}
+
+function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="mb-1 px-2.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+        {label}
+      </div>
+      <NavList items={items} />
+    </div>
+  )
+}
+
+function NavList({ items }: { items: NavItem[] }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      {items.map((item) => (
+        <NavRow key={item.to} {...item} />
+      ))}
+    </div>
+  )
+}
+
+function NavRow({ to, label, icon: Icon, end }: NavItem) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        cn(
+          'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors',
+          isActive
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground/65 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
+        )
+      }
+    >
+      <Icon className="size-4 shrink-0" />
+      <span>{label}</span>
+    </NavLink>
   )
 }

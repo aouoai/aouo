@@ -27,6 +27,15 @@ export default tseslint.config(
     },
   },
   {
+    // CLI entry points and command handlers legitimately print to stdout —
+    // the user runs them in a terminal. Logger is for structured telemetry,
+    // not for user-facing prompts and status output.
+    files: ['bin/**/*.ts', 'src/commands/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  {
     ignores: ['dist/', 'node_modules/', 'coverage/', '*.config.*'],
   },
 );

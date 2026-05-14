@@ -222,21 +222,17 @@ export class TelegramAdapter {
     const route = getOrCreateRoute(address);
     const loadedPacks = getLoadedPacks();
 
+    // Zero packs is a valid mode: aouo degrades to a general-purpose runtime
+    // shell (persistence + scheduling + LLM, no pack workflows). Only the
+    // multi-pack case needs the picker; single-pack auto-binds for /whereami.
     let activePack: string | undefined = route.activePack ?? undefined;
-    if (!activePack) {
-      if (loadedPacks.length === 0) {
-        await ctx.reply('⚠️ No packs are installed. Run `aouo pack link <path>` first.');
-        return;
-      }
-      if (loadedPacks.length === 1) {
-        // Single-pack install: silently bind so /whereami reflects reality.
-        const only = loadedPacks[0]!.manifest.name;
-        setRoutePack(route.id, only);
-        activePack = only;
-      } else {
-        await this.sendPackPicker(ctx, loadedPacks.map((p) => p.manifest.name));
-        return;
-      }
+    if (!activePack && loadedPacks.length === 1) {
+      const only = loadedPacks[0]!.manifest.name;
+      setRoutePack(route.id, only);
+      activePack = only;
+    } else if (!activePack && loadedPacks.length > 1) {
+      await this.sendPackPicker(ctx, loadedPacks.map((p) => p.manifest.name));
+      return;
     }
 
     const sessionKey = `tg:${ctx.chat!.id}`;

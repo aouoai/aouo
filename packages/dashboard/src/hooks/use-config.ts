@@ -59,7 +59,11 @@ export interface StatusResponse {
 
 export interface PackInfo {
   name: string
+  version: string
   path: string
+  description: string
+  skills: number
+  cronDefaults: number
 }
 
 interface SaveResponse {

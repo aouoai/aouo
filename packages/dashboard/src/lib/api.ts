@@ -1,16 +1,35 @@
 /**
  * API client for communicating with the aouo agent server.
  *
- * Token is read from the URL search params on first load and attached
- * to all subsequent requests via the X-Aouo-Token header.
+ * Token is captured eagerly at module load — BEFORE React Router's first
+ * Navigate strips the `?token=...` query — and mirrored to sessionStorage
+ * so subsequent in-app navigations and refreshes can still authenticate.
+ * All requests attach it via the X-Aouo-Token header.
  */
 
-let _token: string | null = null
+const TOKEN_STORAGE_KEY = 'aouo-token'
+
+function captureToken(): string {
+  if (typeof window === 'undefined') return ''
+  const fromUrl = new URL(window.location.href).searchParams.get('token')
+  if (fromUrl) {
+    try {
+      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, fromUrl)
+    } catch {
+      // sessionStorage may be unavailable (privacy mode). Module-level fallback still works.
+    }
+    return fromUrl
+  }
+  try {
+    return window.sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+const _token = captureToken()
 
 function getToken(): string {
-  if (!_token) {
-    _token = new URL(window.location.href).searchParams.get('token') ?? ''
-  }
   return _token
 }
 

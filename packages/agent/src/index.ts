@@ -181,3 +181,7 @@ export { analyzeImage } from './lib/vision.js';
 // ── Scheduler ────────────────────────────────────────────────────────────────
 export type { CronJob, CronSchedule, CreateCronJobInput, SchedulerDelivery } from './lib/scheduler.js';
 export { startScheduler, stopScheduler, listJobs, getJob, createJob, updateJob, removeJob } from './lib/scheduler.js';
+
+// ── Dashboard Server ─────────────────────────────────────────────────────────
+export { startUiServer } from './server/index.js';
+export type { StartUiServerOptions, UiServerHandle } from './server/index.js';

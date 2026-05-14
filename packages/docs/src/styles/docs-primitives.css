@@ -1,0 +1,294 @@
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+:root {
+  --aouo-mono:
+    'JetBrains Mono',
+    ui-monospace,
+    'SFMono-Regular',
+    'SF Mono',
+    Consolas,
+    'Liberation Mono',
+    monospace;
+  --sl-font:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif !important;
+  --sl-font-mono: var(--aouo-mono) !important;
+  --__sl-font: var(--sl-font) !important;
+  --__sl-font-mono: var(--aouo-mono) !important;
+  --aouo-doc-code-bg: #f6f6f7;
+  --aouo-doc-code-border: #ececef;
+  --aouo-doc-callout-bg: #f0f1ff;
+  --aouo-doc-callout-title: #3f3f46;
+  --aouo-doc-callout-text: #3f3f46;
+  --aouo-doc-callout-code-bg: #dfe2ff;
+  --aouo-doc-table-bg: #ffffff;
+  --aouo-doc-table-stripe: #f6f6f7;
+  --aouo-doc-table-border: #e4e4e7;
+}
+
+:root[data-theme='dark'] {
+  --aouo-doc-code-bg: #161618;
+  --aouo-doc-code-border: #27272a;
+  --aouo-doc-callout-bg: #1f2133;
+  --aouo-doc-callout-title: #e4e4e7;
+  --aouo-doc-callout-text: #d4d4d8;
+  --aouo-doc-callout-code-bg: #2a2d45;
+  --aouo-doc-table-bg: #111113;
+  --aouo-doc-table-stripe: #18181b;
+  --aouo-doc-table-border: #2f2f33;
+}
+
+.sl-markdown-content table {
+  width: 100% !important;
+  margin-block: 22px 30px !important;
+  border: 1px solid var(--aouo-doc-table-border) !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  border-radius: 10px !important;
+  background: var(--aouo-doc-table-bg) !important;
+  overflow: hidden !important;
+}
+
+.sl-markdown-content table th,
+.sl-markdown-content table td {
+  border: 0 !important;
+  border-right: 1px solid var(--aouo-doc-table-border) !important;
+  border-bottom: 1px solid var(--aouo-doc-table-border) !important;
+}
+
+.sl-markdown-content table th {
+  background: var(--aouo-doc-table-bg) !important;
+}
+
+.sl-markdown-content table tbody tr:nth-child(even) {
+  background: var(--aouo-doc-table-stripe) !important;
+}
+
+.sl-markdown-content table tr > :last-child {
+  border-right: 0 !important;
+}
+
+.sl-markdown-content table tbody tr:last-child > td {
+  border-bottom: 0 !important;
+}
+
+.sl-markdown-content .starlight-aside {
+  margin-block: 24px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: var(--aouo-doc-callout-bg) !important;
+  color: var(--aouo-doc-callout-text) !important;
+  padding: 20px 24px !important;
+  box-shadow: none !important;
+}
+
+.sl-markdown-content .starlight-aside__title {
+  margin: 0 0 14px !important;
+  color: var(--aouo-doc-callout-title) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.4 !important;
+  text-transform: uppercase !important;
+}
+
+.sl-markdown-content .starlight-aside__icon {
+  display: none !important;
+}
+
+.sl-markdown-content .starlight-aside__content,
+.sl-markdown-content .starlight-aside__content p {
+  color: var(--aouo-doc-callout-text) !important;
+  font-size: 16px !important;
+  line-height: 1.75 !important;
+}
+
+.sl-markdown-content .starlight-aside__content > :first-child {
+  margin-top: 0 !important;
+}
+
+.sl-markdown-content .starlight-aside__content > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.sl-markdown-content .starlight-aside code {
+  border-radius: 6px !important;
+  background: var(--aouo-doc-callout-code-bg) !important;
+  color: inherit !important;
+  padding: 0.15em 0.35em !important;
+}
+
+.sl-markdown-content .expressive-code {
+  margin-block: 18px 28px;
+}
+
+.sl-markdown-content .expressive-code figure.frame {
+  overflow: hidden;
+  border: 1px solid var(--aouo-doc-code-border) !important;
+  border-radius: 10px !important;
+  background: var(--aouo-doc-code-bg) !important;
+  box-shadow: none !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame figcaption.header {
+  min-height: 44px !important;
+  border-bottom: 1px solid var(--aouo-doc-code-border) !important;
+  border-radius: 10px 10px 0 0 !important;
+  background: var(--aouo-doc-code-bg) !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame figcaption.header::before {
+  position: absolute !important;
+  top: 50% !important;
+  left: 18px !important;
+  width: 9px !important;
+  height: 9px !important;
+  border-radius: 999px !important;
+  background: #ff5f57 !important;
+  box-shadow:
+    14px 0 0 #ffbd2e,
+    28px 0 0 #28c840 !important;
+  mask: none !important;
+  -webkit-mask: none !important;
+  opacity: 1 !important;
+  transform: translateY(-50%) !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame pre {
+  border-radius: 0 0 10px 10px !important;
+  background: var(--aouo-doc-code-bg) !important;
+  box-shadow: none !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy {
+  top: 6px !important;
+  right: 10px !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy button {
+  position: relative !important;
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-indent: 48px !important;
+  color: #a1a1aa !important;
+  opacity: 1 !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy button:hover,
+.sl-markdown-content .expressive-code figure.frame .copy button:focus-visible {
+  color: #f4f4f5 !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy button > * {
+  display: none !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy [aria-live] {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 2 !important;
+  width: 32px !important;
+  height: 32px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy .feedback {
+  position: absolute !important;
+  inset: 1px !important;
+  width: 30px !important;
+  height: 30px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  background: #438456 !important;
+  color: transparent !important;
+  transform: translate3d(0, 0.25rem, 0) !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy .feedback.show {
+  transform: translate3d(0, 0, 0) !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy .feedback::before {
+  content: '' !important;
+  position: absolute !important;
+  top: 7px !important;
+  left: 10px !important;
+  width: 8px !important;
+  height: 13px !important;
+  border: 0 solid #fff !important;
+  border-right-width: 2px !important;
+  border-bottom-width: 2px !important;
+  transform: rotate(45deg) !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy .feedback::after {
+  display: none !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy button::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: 7px !important;
+  border: 1.5px solid currentColor !important;
+  border-radius: 3px !important;
+  background: transparent !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy button::after {
+  content: '' !important;
+  position: absolute !important;
+  top: 6px !important;
+  right: 7px !important;
+  width: 10px !important;
+  height: 12px !important;
+  border: 1.5px solid currentColor !important;
+  border-radius: 3px !important;
+  background: var(--aouo-doc-code-bg) !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy button.copied::before,
+.sl-markdown-content .expressive-code figure.frame .copy button[data-copied='true']::before,
+.sl-markdown-content .expressive-code figure.frame .copy button[aria-label*='Copied']::before,
+.sl-markdown-content .expressive-code figure.frame .copy button[title*='Copied']::before {
+  inset: auto !important;
+  top: 7px !important;
+  left: 10px !important;
+  width: 8px !important;
+  height: 13px !important;
+  border: 0 solid #fff !important;
+  border-right-width: 2px !important;
+  border-bottom-width: 2px !important;
+  border-radius: 0 !important;
+  transform: rotate(45deg) !important;
+}
+
+.sl-markdown-content .expressive-code figure.frame .copy button.copied::after,
+.sl-markdown-content .expressive-code figure.frame .copy button[data-copied='true']::after,
+.sl-markdown-content .expressive-code figure.frame .copy button[aria-label*='Copied']::after,
+.sl-markdown-content .expressive-code figure.frame .copy button[title*='Copied']::after {
+  display: none !important;
+}

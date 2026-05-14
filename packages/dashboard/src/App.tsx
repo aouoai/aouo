@@ -1,5 +1,6 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
+import { OverviewPage } from '@/pages/OverviewPage'
 import { ProviderPage } from '@/pages/ProviderPage'
 import { ToolsPage } from '@/pages/ToolsPage'
 import { ChannelsPage } from '@/pages/ChannelsPage'
@@ -13,7 +14,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<DashboardLayout />}>
-          <Route index element={<Navigate to="/provider" replace />} />
+          <Route index element={<OverviewPage />} />
           <Route path="provider" element={<ProviderPage />} />
           <Route path="tools" element={<ToolsPage />} />
           <Route path="channels" element={<ChannelsPage />} />
