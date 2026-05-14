@@ -30,10 +30,74 @@ import {
   setActiveSkill,
 } from '../storage/sessionStore.js';
 import { logger } from '../lib/logger.js';
-import { trackLlm } from '../lib/usage.js';
+import { trackLlm, getSessionTokenTotal, getDailyTokenTotal } from '../lib/usage.js';
 import { truncateHistory, sanitizeHistory } from './history.js';
 import { classifyApiError } from './errorClassifier.js';
 import { ContextCompressor, estimateTokens } from './contextCompressor.js';
+
+/**
+ * Thrown by {@link Agent.run} when multiple packs are loaded but the caller did
+ * not specify which one is active for this run. The adapter is expected to
+ * catch this, present a pack picker (e.g., Telegram `/pack`), and re-invoke
+ * `run` with `options.activePack` resolved from the conversation route.
+ *
+ * The same error is thrown when an explicit `options.activePack` refers to a
+ * pack that is not currently loaded (stale route after a pack was uninstalled).
+ */
+export class RouteRequiredError extends Error {
+  readonly reason: 'multi-pack-no-selection' | 'pack-not-loaded';
+  readonly availablePacks: string[];
+  readonly requestedPack?: string;
+
+  constructor(
+    reason: 'multi-pack-no-selection' | 'pack-not-loaded',
+    availablePacks: string[],
+    requestedPack?: string,
+  ) {
+    const detail =
+      reason === 'pack-not-loaded'
+        ? `Requested pack "${requestedPack}" is not loaded. Available: [${availablePacks.join(', ')}].`
+        : `Multiple packs loaded ([${availablePacks.join(', ')}]) but no activePack specified.`;
+    super(`${detail} Caller must resolve a pack from the conversation route before invoking Agent.run.`);
+    this.name = 'RouteRequiredError';
+    this.reason = reason;
+    this.availablePacks = availablePacks;
+    if (requestedPack !== undefined) this.requestedPack = requestedPack;
+  }
+}
+
+/**
+ * Thrown by {@link Agent.run} when a token quota in `config.advanced` is hit
+ * before the next LLM call. Two flavors:
+ *   - `session`: the current session's lifetime token total reached
+ *     `session_tokens_max`. The user can recover by starting a new session
+ *     (e.g., `/new` on Telegram).
+ *   - `daily`: the day's aggregate token total reached `daily_tokens_max`.
+ *     Resets at local midnight; user must wait or raise the cap in
+ *     `~/.aouo/config.json`.
+ *
+ * The adapter is expected to catch this and surface a friendly message —
+ * raw stack traces should never leak to end-users for quota issues.
+ */
+export class QuotaExceededError extends Error {
+  readonly scope: 'session' | 'daily';
+  readonly used: number;
+  readonly cap: number;
+
+  constructor(scope: 'session' | 'daily', used: number, cap: number) {
+    const scopeLabel = scope === 'session' ? 'Session' : 'Daily';
+    super(
+      `${scopeLabel} token quota exhausted: used ${used.toLocaleString()} / cap ${cap.toLocaleString()}. ` +
+        (scope === 'session'
+          ? 'Start a new session to reset, or raise `advanced.session_tokens_max` in config.json.'
+          : 'Quota resets at local midnight, or raise `advanced.daily_tokens_max` in config.json.'),
+    );
+    this.name = 'QuotaExceededError';
+    this.scope = scope;
+    this.used = used;
+    this.cap = cap;
+  }
+}
 
 /**
  * Per-run tool filtering policy.
@@ -66,6 +130,20 @@ export interface RunOptions {
   files?: MessageFile[];
   /** Per-run tool filtering policy. */
   toolPolicy?: ToolPolicy;
+  /**
+   * Active pack name for this run. The caller (adapter or scheduler) resolves
+   * this from the `conversation_routes` table before invoking the agent.
+   *
+   * Resolution rules:
+   *   - If provided, it must match a currently loaded pack — otherwise
+   *     {@link RouteRequiredError} is thrown.
+   *   - If omitted and exactly one pack is loaded, that pack is used.
+   *   - If omitted and zero packs are loaded, `pack` in `ToolContext` stays
+   *     undefined (degenerate / unit-test mode).
+   *   - If omitted and multiple packs are loaded, {@link RouteRequiredError}
+   *     is thrown before the LLM is contacted.
+   */
+  activePack?: string;
 }
 
 /**
@@ -141,12 +219,43 @@ export class Agent {
     const { sessionKey, newSession, files, toolPolicy } = options;
     let { sessionId } = options;
 
+    // ── Pack Resolution (gate before any side-effects / LLM call) ──
+    // Caller responsibility: pass options.activePack resolved from the
+    // conversation route. With multiple packs loaded and no explicit choice
+    // we refuse rather than silently picking — see RouteRequiredError docs.
+    let activePack: string | undefined;
+    if (options.activePack !== undefined) {
+      const known = this.packs.some((p) => p.manifest.name === options.activePack);
+      if (!known) {
+        throw new RouteRequiredError(
+          'pack-not-loaded',
+          this.packs.map((p) => p.manifest.name),
+          options.activePack,
+        );
+      }
+      activePack = options.activePack;
+    } else if (this.packs.length === 1) {
+      activePack = this.packs[0]!.manifest.name;
+    } else if (this.packs.length > 1) {
+      throw new RouteRequiredError(
+        'multi-pack-no-selection',
+        this.packs.map((p) => p.manifest.name),
+      );
+    }
+
     // ── Session Resolution ──
     if (!sessionId) {
       sessionId = newSession
         ? await createSession(sessionKey)
         : await getOrCreateSession(sessionKey);
     }
+
+    // ── Quota Gate (pre-LLM) ──
+    // Per-session and per-day token caps prevent runaway spend when the model
+    // gets stuck in a tool loop or a single conversation drags on for hours.
+    // The check fires before history loading so we don't pay I/O cost when we
+    // already know the run will be refused. A cap of 0 means "disabled".
+    this.assertWithinQuota(sessionId);
 
     // ── History Loading & Cleanup ──
     let history = loadMessages(sessionId);
@@ -159,10 +268,12 @@ export class Agent {
     const baseSystemPrompt = buildSystemPrompt(this.config, this.packs, this.skillIndex);
     const activeSkillName = getActiveSkill(sessionId);
     let systemPrompt = baseSystemPrompt;
-    let activePack = this.packs.length === 1 ? this.packs[0]!.manifest.name : undefined;
     if (activeSkillName) {
       const skill = this.resolveSkill(activeSkillName);
       if (skill) {
+        // A skill resolved with an owning pack overrides the resolved pack so
+        // tool context follows the skill — assumes adapter has already gated
+        // pack selection via the conversation route.
         activePack = skill.pack ?? activePack;
         systemPrompt = buildActiveSkillSystemPrompt(baseSystemPrompt, activeSkillName, skill.body);
       }
@@ -276,7 +387,12 @@ export class Agent {
       logger.info(logEntry);
 
       if (u) {
-        trackLlm(u.promptTokens || 0, u.completionTokens || 0, u.cachedTokens || 0, this.provider.name);
+        trackLlm(u.promptTokens || 0, u.completionTokens || 0, u.cachedTokens || 0, this.provider.name, sessionId);
+        // Mid-run check: a single multi-turn ReAct can chew through tokens
+        // fast (long tool outputs, repeated retries), so re-evaluate after
+        // every billable call. Refusing here still costs us the call we just
+        // made, but stops the next one before it ships.
+        this.assertWithinQuota(sessionId);
       }
 
       // ── Tool Calls ──
@@ -382,6 +498,35 @@ export class Agent {
       toolCallCount: totalToolCalls,
       tgSent: toolSentContent,
     };
+  }
+
+  /**
+   * Throws {@link QuotaExceededError} when the current session or the day
+   * has exhausted the token budget configured in `advanced.session_tokens_max`
+   * / `advanced.daily_tokens_max`. A cap of `0` is treated as "disabled" so
+   * existing configs that pre-date this feature keep working unchanged.
+   *
+   * The session check runs first — it has the tighter scope and the more
+   * actionable recovery (start a new session).
+   */
+  private assertWithinQuota(sessionId: string): void {
+    const sessionCap = this.config.advanced.session_tokens_max;
+    if (sessionCap > 0) {
+      const used = getSessionTokenTotal(sessionId);
+      if (used >= sessionCap) {
+        logger.warn({ msg: 'quota_session_exceeded', sessionId, used, cap: sessionCap });
+        throw new QuotaExceededError('session', used, sessionCap);
+      }
+    }
+
+    const dailyCap = this.config.advanced.daily_tokens_max;
+    if (dailyCap > 0) {
+      const used = getDailyTokenTotal();
+      if (used >= dailyCap) {
+        logger.warn({ msg: 'quota_daily_exceeded', used, cap: dailyCap });
+        throw new QuotaExceededError('daily', used, dailyCap);
+      }
+    }
   }
 }
 

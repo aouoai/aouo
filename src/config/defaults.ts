@@ -143,6 +143,19 @@ export interface AouoConfig {
     log_level: 'debug' | 'info' | 'warn' | 'error';
     /** Maximum ReAct loop iterations per user query. */
     max_react_loops: number;
+    /**
+     * Per-session lifetime token cap (sum of input + output across all turns
+     * in one session). When exceeded, Agent.run throws QuotaExceededError
+     * before the next LLM call. Set to 0 to disable.
+     */
+    session_tokens_max: number;
+    /**
+     * Aggregate token cap for the current local day (all sessions, all
+     * providers). When exceeded, Agent.run refuses new turns until the next
+     * day. Set to 0 to disable. The default is provider-agnostic — at
+     * Gemini Flash rates ~2M tokens ≈ a couple of USD; tune for your wallet.
+     */
+    daily_tokens_max: number;
   };
 }
 
@@ -223,5 +236,7 @@ export const DEFAULT_CONFIG: AouoConfig = {
     max_history_messages: 200,
     log_level: 'info',
     max_react_loops: 20,
+    session_tokens_max: 500_000,
+    daily_tokens_max: 2_000_000,
   },
 };

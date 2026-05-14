@@ -7,7 +7,7 @@
  */
 
 // ── Agent Runtime ────────────────────────────────────────────────────────────
-export { Agent } from './agent/Agent.js';
+export { Agent, RouteRequiredError, QuotaExceededError } from './agent/Agent.js';
 export type { RunOptions, RunResult, ToolPolicy, SkillResolver } from './agent/Agent.js';
 
 // ── Core Types ───────────────────────────────────────────────────────────────
@@ -123,6 +123,16 @@ export {
 } from './storage/sessionStore.js';
 export type { SessionInfo } from './storage/sessionStore.js';
 
+export {
+  getOrCreateRoute,
+  getRouteState,
+  setRoutePack,
+  setRouteSession,
+  setRouteActiveSkill,
+  conversationSessionKey,
+} from './storage/conversationRoutes.js';
+export type { ConversationAddress, ConversationRoute } from './storage/conversationRoutes.js';
+
 // ── Paths ────────────────────────────────────────────────────────────────────
 export {
   AOUO_HOME,
@@ -148,7 +158,16 @@ export { splitMarkdownForTelegram, stripMarkdown } from './adapters/telegram.js'
 export { logger, setLogLevel } from './lib/logger.js';
 
 // ── Usage Tracking ───────────────────────────────────────────────────────────
-export { trackLlm, trackTts, trackStt, trackService, trackWebSearch, trackVision } from './lib/usage.js';
+export {
+  trackLlm,
+  trackTts,
+  trackStt,
+  trackService,
+  trackWebSearch,
+  trackVision,
+  getSessionTokenTotal,
+  getDailyTokenTotal,
+} from './lib/usage.js';
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 export { markdownToTelegramHtml } from './lib/tgFormat.js';
