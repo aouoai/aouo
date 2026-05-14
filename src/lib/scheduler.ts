@@ -355,10 +355,26 @@ async function runAgentForJob(config: AouoConfig, job: CronJob): Promise<string>
     await setActiveSkill(sessionId, job.skill);
   }
 
+  // Cron runs unattended. Conservative allowlist + argFilter sub-permissions.
+  //   persist  — record results into pack DB
+  //   memory   — read-only (action='read'); writes require an interactive session
+  // The scheduler delivers the final assistant text via sendProactiveMessage,
+  // so tg_msg / msg / cron / clarify are intentionally NOT in the allowlist.
   const result = await agent.run(prompt, {
     sessionKey,
     sessionId,
-    toolPolicy: { deny: ['cron', 'tg_msg', 'clarify'] },
+    toolPolicy: {
+      allow: ['persist', 'memory'],
+      argFilter: {
+        memory: (args: Record<string, unknown>): string | null => {
+          const action = String(args['action'] || '');
+          if (action !== 'read') {
+            return `memory.${action} is not allowed in cron context; only "read" is permitted.`;
+          }
+          return null;
+        },
+      },
+    },
   });
 
   return (adapter.content || result.content || '').trim();

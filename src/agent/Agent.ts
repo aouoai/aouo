@@ -43,6 +43,13 @@ export interface ToolPolicy {
   allow?: string[];
   /** Blacklist of tool names to exclude from the run. */
   deny?: string[];
+  /**
+   * Per-tool argument constraint. Receives the LLM-supplied args and returns
+   * `null` to allow the call, or an error string to reject it before dispatch.
+   * Used to express sub-permissions a flat allow/deny cannot capture
+   * (e.g., "memory may only run in read mode under cron").
+   */
+  argFilter?: Record<string, (args: Record<string, unknown>) => string | null>;
 }
 
 /**
@@ -290,13 +297,18 @@ export class Agent {
             this.adapter.showToolCall(toolCall.name, toolCall.args);
           }
 
-          const result = await dispatch(toolCall.name, toolCall.args, {
-            adapter: this.adapter,
-            config: this.config,
-            sessionId,
-            sessionKey,
-            pack: activePack,
-          });
+          // ToolPolicy.argFilter — sub-permission gate (e.g., cron-only "read" actions).
+          const filter = toolPolicy?.argFilter?.[toolCall.name];
+          const filterError = filter ? filter(toolCall.args) : null;
+          const result = filterError
+            ? { content: `Error: ${filterError}`, isError: true }
+            : await dispatch(toolCall.name, toolCall.args, {
+                adapter: this.adapter,
+                config: this.config,
+                sessionId,
+                sessionKey,
+                pack: activePack,
+              });
 
           // Active skill persistence on skill_view
           if (toolCall.name === 'skill_view' && !toolCall.args['file'] && !result.isError) {
