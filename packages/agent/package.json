@@ -1,6 +1,6 @@
 {
   "name": "@aouo/agent",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "description": "Vertical agent app platform — install packs, not prompts.",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,6 +9,7 @@
     "aouo": "dist/bin/aouo.js"
   },
   "files": [
+    "README.md",
     "dist",
     "templates"
   ],

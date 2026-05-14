@@ -71,15 +71,11 @@ Every serious vertical agent app should have all five:
 - **Node.js ≥ 22** (use `nvm use` — repo ships `.nvmrc`)
 - **pnpm** (recommended)
 
-### Install & Initialize (dev mode — pre-alpha)
+### Install & Initialize
 
 ```bash
-# Clone & build from source — npm publish is not live yet.
-git clone https://github.com/aouoai/aouo.git
-cd aouo
-pnpm install
-pnpm build
-pnpm link --global   # exposes the `aouo` binary on your PATH
+# Install the alpha CLI from npm.
+pnpm add -g @aouo/agent@next
 
 # Initialize data directory
 aouo init
@@ -88,10 +84,14 @@ aouo init
 aouo gateway start
 ```
 
-Once `0.x-alpha` is on npm, the global install path will become:
+For source development:
 
 ```bash
-pnpm add -g @aouo/agent   # not yet available
+git clone https://github.com/aouoai/aouo.git
+cd aouo
+pnpm install
+pnpm build
+pnpm --filter @aouo/agent link --global
 ```
 
 ### Configuration
