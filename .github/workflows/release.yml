@@ -49,7 +49,14 @@ jobs:
             PUBLISH_TAG=next
           fi
 
-          pnpm publish --no-git-checks --access public --tag "$PUBLISH_TAG"
+          npm publish --access public --tag "$PUBLISH_TAG"
+
+          if [[ "$PACKAGE_VERSION" == *-* ]]; then
+            CURRENT_LATEST=$(npm view @aouo/agent dist-tags.latest --registry=https://registry.npmjs.org 2>/dev/null || true)
+            if [[ -z "$CURRENT_LATEST" || "$CURRENT_LATEST" == *-* ]]; then
+              npm dist-tag add "@aouo/agent@$PACKAGE_VERSION" latest --registry=https://registry.npmjs.org
+            fi
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
