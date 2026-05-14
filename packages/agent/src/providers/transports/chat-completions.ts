@@ -58,7 +58,11 @@ function toOpenAITools(tools: ToolSchema[]): Array<Record<string, unknown>> {
   }));
 }
 
-async function consumeOpenAIStream(response: Response, startTime: number): Promise<LLMResponse> {
+async function consumeOpenAIStream(
+  response: Response,
+  startTime: number,
+  onToken?: (delta: string) => void,
+): Promise<LLMResponse> {
   if (!response.body) {
     return { content: '', durationMs: Date.now() - startTime };
   }
@@ -97,7 +101,13 @@ async function consumeOpenAIStream(response: Response, startTime: number): Promi
         if (choices?.[0]) {
           const delta = choices[0].delta as Record<string, unknown> | undefined;
           if (delta) {
-            if (delta.content) textParts.push(delta.content as string);
+            if (delta.content) {
+              const text = delta.content as string;
+              textParts.push(text);
+              if (onToken) {
+                try { onToken(text); } catch { /* swallow — streaming is best-effort */ }
+              }
+            }
 
             const tcDeltas = delta.tool_calls as Array<Record<string, unknown>> | undefined;
             if (tcDeltas) {

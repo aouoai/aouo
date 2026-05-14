@@ -69,6 +69,7 @@ function toResponsesTools(tools: ToolSchema[]): Array<Record<string, unknown>> {
 async function consumeResponsesStream(
   response: Response,
   startTime: number,
+  onToken?: (delta: string) => void,
 ): Promise<LLMResponse> {
   if (!response.body) {
     return { content: '', durationMs: Date.now() - startTime };
@@ -110,6 +111,19 @@ async function consumeResponsesStream(
         }
 
         const eventType = event.type as string;
+
+        // Codex's Responses API streams `response.output_text.delta` events
+        // for incremental text and `response.output_item.done` for the
+        // final aggregated message. We forward delta events when present
+        // (streaming-enabled) and still pick up the canonical text from
+        // output_item.done below (the two are consistent — done's text
+        // is the concatenation of preceding deltas).
+        if (eventType === 'response.output_text.delta') {
+          const delta = event.delta as string | undefined;
+          if (delta && onToken) {
+            try { onToken(delta); } catch { /* swallow */ }
+          }
+        }
 
         if (eventType === 'response.output_item.done') {
           const item = event.item as Record<string, unknown> | undefined;

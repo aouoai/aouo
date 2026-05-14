@@ -63,6 +63,7 @@ class ProfileBackedProvider implements LLMProvider {
         maxTokens: config.provider.max_tokens,
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
       },
+      ...(options?.onToken ? { onToken: options.onToken } : {}),
     });
   }
 }

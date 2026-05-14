@@ -357,11 +357,23 @@ export class TelegramAdapter {
 
     try {
       await sessionAdapter.sendThinking();
-      const result: RunResult = await agent.run(input, { sessionKey, sessionId, files, activePack });
+      const result: RunResult = await agent.run(input, {
+        sessionKey, sessionId, files, activePack,
+        // Stream the LLM's text deltas into a live-edited message so the
+        // user sees output as it arrives. SessionAdapter handles throttling
+        // and gates on `capabilities.editMessage`; an adapter without
+        // edit-message support silently no-ops.
+        onToken: (delta) => sessionAdapter.streamingReply(delta),
+      });
 
       if (route.sessionId !== result.sessionId) {
         setRouteSession(route.id, result.sessionId);
       }
+
+      // Flush the final streamed buffer + append pack badge before any
+      // fallback reply() — finalize sets hasSentContent so reply() will
+      // short-circuit when streaming already delivered the message.
+      await sessionAdapter.finalizeStreamingReply();
 
       if (!result.tgSent && result.content) {
         if (result.toolCallCount > 0) {
@@ -969,7 +981,10 @@ export class TelegramAdapter {
 
         try {
           await sessionAdapter.sendThinking();
-          const runOpts: Record<string, unknown> = { sessionKey };
+          const runOpts: Record<string, unknown> = {
+            sessionKey,
+            onToken: (delta: string) => sessionAdapter.streamingReply(delta),
+          };
 
           if (isSkillSwitch) {
             const newSid = await createSession(sessionKey);
@@ -978,6 +993,7 @@ export class TelegramAdapter {
           }
 
           const result: RunResult = await agent.run(agentInput, runOpts as any);
+          await sessionAdapter.finalizeStreamingReply();
           if (!result.tgSent && result.content) {
             await sessionAdapter.reply(result.content);
           }
@@ -1034,7 +1050,11 @@ export class TelegramAdapter {
         const agent = this.createAgent(sessionAdapter);
 
         try {
-          const result: RunResult = await agent.run(input, { sessionKey });
+          const result: RunResult = await agent.run(input, {
+            sessionKey,
+            onToken: (delta) => sessionAdapter.streamingReply(delta),
+          });
+          await sessionAdapter.finalizeStreamingReply();
           if (!result.tgSent && result.content) {
             await sessionAdapter.reply(result.content);
           }

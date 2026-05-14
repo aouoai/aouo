@@ -23,6 +23,8 @@ export interface RunChatArgs {
   transport: ProviderTransport;
   request: TransportRequest;
   config: AouoConfig;
+  /** Optional per-delta callback for live streaming; forwarded to transport. */
+  onToken?: (delta: string) => void;
 }
 
 /**
@@ -32,7 +34,7 @@ export interface RunChatArgs {
  * error classification. Returns the parsed LLMResponse on success.
  */
 export async function runChat(args: RunChatArgs): Promise<LLMResponse> {
-  const { profile, transport, request, config } = args;
+  const { profile, transport, request, config, onToken } = args;
   const maxRetries = config.provider.max_retries;
   const body = JSON.stringify(transport.buildRequestBody(request));
   let authRefreshed = false;
@@ -107,7 +109,7 @@ export async function runChat(args: RunChatArgs): Promise<LLMResponse> {
       continue;
     }
 
-    return await transport.consumeStream(response, startTime);
+    return await transport.consumeStream(response, startTime, onToken);
   }
 
   throw new Error(`${profile.name} API: max retries exceeded`);

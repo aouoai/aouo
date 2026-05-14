@@ -109,6 +109,21 @@ export class TelegramSessionAdapter implements Adapter {
   /** True once any message tool sends content. Used to skip duplicate final reply. */
   private hasSentContent = false;
 
+  // ── Streaming-reply state ────────────────────────────────────────────────
+  // When `streamingReply` is fed by the provider's onToken callback we
+  // create exactly one outbound message and edit it in-place, throttled
+  // to avoid Telegram's 30 edits/s/chat ceiling. After the agent run
+  // finishes, `finalizeStreamingReply` flushes any pending buffer and
+  // (optionally) appends the active-pack badge.
+  private streamingMessageId?: number;
+  private streamingContent = '';
+  private streamingBuffer = '';
+  private streamingLastEditTs = 0;
+  /** Min chars accumulated since last edit before we issue another. */
+  private static readonly STREAM_MIN_BUFFER = 50;
+  /** Min ms since last edit before we issue another. */
+  private static readonly STREAM_MIN_INTERVAL_MS = 800;
+
   /** True after the first content message replies to the user's incoming message. */
   private hasRepliedToUser = false;
 
@@ -269,6 +284,97 @@ export class TelegramSessionAdapter implements Adapter {
 
       if (msg) this.trackMessage(msg.message_id);
     }
+  }
+
+  // ── Streaming Reply (token-by-token edits) ────────────────────────────────
+
+  /**
+   * Feed one assistant-text delta into the streaming reply pipeline. The
+   * first call creates a new outbound message; subsequent calls edit it
+   * in-place — throttled by {@link STREAM_MIN_BUFFER} and
+   * {@link STREAM_MIN_INTERVAL_MS} so we never hit Telegram's 30 edits/s/chat
+   * rate limit.
+   *
+   * Fire-and-forget: serialized through {@link outboundQueue} so token
+   * deltas land in order without the caller having to await each one.
+   * Silent when the adapter (or the chat surface) doesn't support
+   * editMessage, or when a message tool already sent the content.
+   */
+  streamingReply(delta: string): void {
+    if (!this.capabilities.editMessage) return;
+    if (this.hasSentContent) return;
+    if (!delta) return;
+    this.streamingContent += delta;
+    this.streamingBuffer += delta;
+    this.enqueue(() => this.flushStreamingIfReady());
+  }
+
+  /**
+   * Inside the outbound queue: either create the streaming message (first
+   * call) or edit it if the throttle window is satisfied. Idempotent —
+   * safe to call repeatedly with nothing buffered.
+   */
+  private async flushStreamingIfReady(): Promise<void> {
+    if (!this.streamingContent) return;
+
+    if (!this.streamingMessageId) {
+      // First flush — create the message.
+      const msg = await this.bot.api.sendMessage(this.chatId, this.streamingContent, {
+        ...this.threadOpts,
+        reply_parameters: this.autoReplyTo() ? { message_id: this.autoReplyTo()! } : undefined,
+      }).catch((err) => {
+        logger.warn({ msg: 'tg_stream_create_failed', error: err?.message });
+        return null;
+      });
+      if (msg) {
+        this.streamingMessageId = msg.message_id;
+        this.streamingLastEditTs = Date.now();
+        this.streamingBuffer = '';
+        this.trackMessage(msg.message_id);
+      }
+      return;
+    }
+
+    const now = Date.now();
+    const enoughText = this.streamingBuffer.length >= TelegramSessionAdapter.STREAM_MIN_BUFFER;
+    const enoughTime = now - this.streamingLastEditTs >= TelegramSessionAdapter.STREAM_MIN_INTERVAL_MS;
+    if (!enoughText || !enoughTime) return;
+
+    await this.bot.api.editMessageText(
+      this.chatId,
+      this.streamingMessageId,
+      this.streamingContent,
+    ).catch((err) => {
+      logger.debug({ msg: 'tg_stream_edit_failed', error: err?.message });
+    });
+    this.streamingLastEditTs = now;
+    this.streamingBuffer = '';
+  }
+
+  /**
+   * Final edit at the end of the agent run: flush any remaining buffered
+   * content, append the active-pack badge (when applicable), and mark the
+   * adapter as having sent content so the post-run `reply()` short-circuits
+   * instead of double-posting.
+   *
+   * Returns true when streaming actually delivered the reply (caller can
+   * skip a subsequent `reply()`), false when no streaming happened.
+   */
+  async finalizeStreamingReply(): Promise<boolean> {
+    if (!this.streamingMessageId) return false;
+    const finalText = appendPackBadge(this.streamingContent, {
+      activePack: this.activePack,
+      show: this.showPackBadge,
+    });
+    await this.enqueue(async () => {
+      try {
+        await this.bot.api.editMessageText(this.chatId, this.streamingMessageId!, finalText);
+      } catch (err) {
+        logger.debug({ msg: 'tg_stream_finalize_failed', error: (err as Error).message });
+      }
+    });
+    this.hasSentContent = true;
+    return true;
   }
 
   // ── Status Window (single line, edited in-place) ───────────────────────────

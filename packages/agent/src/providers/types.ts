@@ -77,6 +77,17 @@ export interface ProviderTransport {
   readonly apiMode: ApiMode;
   /** Build the JSON body of a streaming POST. */
   buildRequestBody(req: TransportRequest): Record<string, unknown>;
-  /** Consume the SSE stream and aggregate it into an LLMResponse. */
-  consumeStream(response: Response, startTime: number): Promise<LLMResponse>;
+  /**
+   * Consume the SSE stream and aggregate it into an LLMResponse.
+   *
+   * When `onToken` is provided, each assistant-text delta is forwarded
+   * synchronously as it arrives so the adapter can stream into a live
+   * message. The transport still aggregates the full text and returns
+   * it in the LLMResponse — `onToken` is purely additive.
+   */
+  consumeStream(
+    response: Response,
+    startTime: number,
+    onToken?: (delta: string) => void,
+  ): Promise<LLMResponse>;
 }

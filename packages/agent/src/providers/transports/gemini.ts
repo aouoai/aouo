@@ -102,7 +102,11 @@ interface GeminiUsageMetadata {
   thoughtsTokenCount?: number;
 }
 
-async function consumeGeminiStream(response: Response, startTime: number): Promise<LLMResponse> {
+async function consumeGeminiStream(
+  response: Response,
+  startTime: number,
+  onToken?: (delta: string) => void,
+): Promise<LLMResponse> {
   if (!response.body) {
     return { content: '', durationMs: Date.now() - startTime };
   }
@@ -150,7 +154,12 @@ async function consumeGeminiStream(response: Response, startTime: number): Promi
           if (!candidate.content?.parts) continue;
           for (const part of candidate.content.parts) {
             rawParts.push(part as Record<string, unknown>);
-            if (part.text) textParts.push(part.text);
+            if (part.text) {
+              textParts.push(part.text);
+              if (onToken) {
+                try { onToken(part.text); } catch { /* swallow — streaming is best-effort */ }
+              }
+            }
             if (part.functionCall) {
               toolCalls.push({
                 id:

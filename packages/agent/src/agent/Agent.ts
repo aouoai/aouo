@@ -144,6 +144,14 @@ export interface RunOptions {
    *     is thrown before the LLM is contacted.
    */
   activePack?: string;
+  /**
+   * Per-token streaming callback. When set, the agent forwards it to
+   * `provider.chat()` so the adapter can render the reply incrementally
+   * via in-place edits. Adapters that don't support streaming (or whose
+   * caller doesn't want it) simply omit this — full-text reply still
+   * lands via {@link Adapter.reply} after the run completes.
+   */
+  onToken?: (delta: string) => void;
 }
 
 /**
@@ -327,7 +335,10 @@ export class Agent {
 
       let response;
       try {
-        response = await this.provider.chat(messages, toolSchemas, this.config, { sessionId });
+        response = await this.provider.chat(messages, toolSchemas, this.config, {
+          sessionId,
+          ...(options.onToken ? { onToken: options.onToken } : {}),
+        });
 
         // Strip file data after first LLM call to prevent repeated base64 uploads
         if (firstLlmCall && files && files.length > 0) {

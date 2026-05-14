@@ -53,6 +53,34 @@ describe('agent/Agent', () => {
     expect(agent.adapter.platform).toBe('test');
   });
 
+  it('forwards options.onToken to the provider for streaming', async () => {
+    const tokens: string[] = [];
+    const streamingProvider: LLMProvider = {
+      name: 'test',
+      async chat(_messages, _tools, _config, options): Promise<LLMResponse> {
+        // Simulate a transport emitting deltas as it consumes a stream.
+        const chunks = ['Hello', ', ', 'world', '!'];
+        for (const c of chunks) options?.onToken?.(c);
+        return {
+          content: chunks.join(''),
+          usage: { promptTokens: 5, completionTokens: 4, totalTokens: 9 },
+        };
+      },
+    };
+
+    const sessionKey = `tg:stream-${Math.random().toString(36).slice(2, 8)}`;
+    await createSession(sessionKey);
+
+    const agent = new Agent(DEFAULT_CONFIG, stubAdapter, streamingProvider);
+    const result = await agent.run('say hi', {
+      sessionKey,
+      onToken: (t) => tokens.push(t),
+    });
+
+    expect(tokens).toEqual(['Hello', ', ', 'world', '!']);
+    expect(result.content).toBe('Hello, world!');
+  });
+
   it('passes the active skill pack into tool context', async () => {
     register({
       name: 'capture_pack_context',

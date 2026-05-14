@@ -123,6 +123,17 @@ export interface LLMResponse {
 export interface ChatOptions {
   /** Session ID used for prompt caching and tracing. */
   sessionId?: string;
+  /**
+   * Per-token callback for live streaming. Invoked by the provider's
+   * transport as each text delta arrives so the adapter can incrementally
+   * render the response (typically via in-place message edits). Tool-call
+   * deltas are NOT forwarded — only assistant text.
+   *
+   * Fire-and-forget: implementations must not throw and should debounce
+   * internally if they touch a rate-limited UI surface (e.g., Telegram's
+   * 30 editMessageText/s/chat ceiling). Omit to disable streaming.
+   */
+  onToken?: (delta: string) => void;
 }
 
 /**
