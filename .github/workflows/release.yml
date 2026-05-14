@@ -29,7 +29,7 @@ jobs:
 
       - name: Verify tag matches package version
         run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_VERSION=$(node -p "require('./packages/agent/package.json').version")
           TAG_VERSION=${GITHUB_REF_NAME#v}
 
           if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
@@ -41,7 +41,15 @@ jobs:
       - run: pnpm test
 
       - name: Publish
-        run: pnpm publish --no-git-checks
+        working-directory: packages/agent
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PUBLISH_TAG=latest
+          if [[ "$PACKAGE_VERSION" == *-* ]]; then
+            PUBLISH_TAG=next
+          fi
+
+          pnpm publish --no-git-checks --access public --tag "$PUBLISH_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

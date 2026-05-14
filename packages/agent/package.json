@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "aouo": "./dist/bin/aouo.js"
+    "aouo": "dist/bin/aouo.js"
   },
   "files": [
     "dist",

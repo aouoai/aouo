@@ -14,15 +14,32 @@
 
 import { Command } from 'commander';
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const program = new Command();
 
+function packageVersion(): string {
+  const candidates = [
+    // Source tree: packages/agent/bin/aouo.ts -> packages/agent/package.json
+    join(import.meta.dirname, '..', 'package.json'),
+    // Published build: dist/bin/aouo.js -> package root package.json
+    join(import.meta.dirname, '..', '..', 'package.json'),
+  ];
+
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: unknown };
+    if (typeof parsed.version === 'string') return parsed.version;
+  }
+
+  return '0.0.0';
+}
+
 program
   .name('aouo')
   .description('Vertical agent app platform — install packs, not prompts.')
-  .version('0.1.0');
+  .version(packageVersion());
 
 // ── init ─────────────────────────────────────────────────────────────────────
 
