@@ -49,6 +49,27 @@ function initializeSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
+
+    -- Conversation routing: an adapter-agnostic address (platform / chat /
+    -- thread / user) maps to the currently active pack, skill, and session.
+    -- Each address has exactly one route row; (active_pack, session_id) is
+    -- rebound when the user runs /use <pack> or picks a pack via UI.
+    CREATE TABLE IF NOT EXISTS conversation_routes (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL DEFAULT '',
+      user_id TEXT NOT NULL DEFAULT '',
+      active_pack TEXT DEFAULT NULL,
+      active_skill TEXT DEFAULT NULL,
+      session_id TEXT DEFAULT NULL REFERENCES sessions(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(platform, chat_id, thread_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_conversation_routes_lookup
+      ON conversation_routes(platform, chat_id, thread_id, user_id);
   `);
 
   // Migration: add active_skill column to existing databases
