@@ -92,70 +92,82 @@ program
 
 // ── doctor ───────────────────────────────────────────────────────────────────
 
+interface DoctorOptions {
+  fast?: boolean;
+}
+
 program
   .command('doctor')
   .description('Check environment health and pack status')
-  .action(async () => {
-    const { AOUO_HOME, isInitialized, PACKS_DIR, DB_PATH, SOUL_PATH, RULES_PATH } = await import(
+  .option('--fast', 'Skip network and provider-API checks (offline mode)')
+  .action(async (options: DoctorOptions) => {
+    const { AOUO_HOME, PACKS_DIR, DB_PATH, SOUL_PATH, RULES_PATH, CONFIG_PATH } = await import(
       '../src/lib/paths.js'
     );
     const { loadConfig } = await import('../src/config/loader.js');
     const { hasCodexAuth } = await import('../src/lib/auth.js');
+    const {
+      runChecks,
+      nodeVersionCheck,
+      initializedCheck,
+      dbWritableCheck,
+      telegramTokenCheck,
+      providerKeyCheck,
+      reachabilityCheck,
+      formatCheckLine,
+      computeExitCode,
+    } = await import('../src/lib/diagnostics.js');
+    const { dirname } = await import('node:path');
 
-    console.log('🩺 aouo doctor\n');
+    console.log(`🩺 aouo doctor${options.fast ? ' (--fast)' : ''}\n`);
+    console.log(`  Home: ${AOUO_HOME}\n`);
 
-    // Node.js version
-    const nodeVersion = process.version;
-    const nodeMajor = parseInt(nodeVersion.slice(1));
-    const nodeOk = nodeMajor >= 22;
-    console.log(`  Node.js: ${nodeVersion} ${nodeOk ? '✅' : '❌ (requires ≥ 22)'}`);
+    const config = loadConfig();
 
-    // Initialization
-    const initialized = isInitialized();
-    console.log(`  Initialized: ${initialized ? '✅' : '❌ Run `aouo init`'}`);
-    console.log(`  Home: ${AOUO_HOME}`);
-    console.log(`  SOUL.md: ${existsSync(SOUL_PATH) ? '✅' : '⚠️  Missing; rerun `aouo init`'}`);
-    console.log(`  RULES.md: ${existsSync(RULES_PATH) ? '✅' : '⚠️  Missing; rerun `aouo init`'}`);
+    const checks = [
+      nodeVersionCheck(),
+      initializedCheck({ soulPath: SOUL_PATH, rulesPath: RULES_PATH, configPath: CONFIG_PATH }),
+      dbWritableCheck(dirname(DB_PATH)),
+      reachabilityCheck('https://api.telegram.org', 'Network: api.telegram.org'),
+      telegramTokenCheck(config.telegram.bot_token),
+      providerKeyCheck(config, hasCodexAuth),
+    ];
 
-    // Database
-    const dbExists = existsSync(DB_PATH);
-    console.log(`  Database: ${dbExists ? '✅' : '⚠️  Not yet created (created on first run)'}`);
+    const results = await runChecks(checks, { fast: options.fast });
+    for (const { check, result } of results) {
+      console.log(formatCheckLine(check, result));
+    }
 
-    // Packs
+    // ── Configuration & inventory summary (cheap, always shown) ──
+    console.log('\n  Inventory:');
+
     if (existsSync(PACKS_DIR)) {
       const packDirs = readdirSync(PACKS_DIR, { withFileTypes: true }).filter(
         (d) => d.isDirectory() && !d.name.startsWith('.'),
       );
-      console.log(`  Packs: ${packDirs.length} installed`);
+      console.log(`    Packs: ${packDirs.length} installed`);
       for (const dir of packDirs) {
-        console.log(`    - ${dir.name}`);
+        console.log(`      - ${dir.name}`);
       }
     } else {
-      console.log(`  Packs: none installed`);
+      console.log(`    Packs: none installed`);
     }
 
-    // Runtime configuration
-    const config = loadConfig();
-    console.log(`\n  Runtime:`);
     console.log(`    Provider: ${config.provider.backend} (${config.provider.model})`);
-    console.log(`    Gemini key: ${config.gemini.api_key ? '✅ configured' : '⚠️  not configured'}`);
-    console.log(`    Codex OAuth: ${hasCodexAuth() ? '✅ authenticated' : '⚠️  not authenticated'}`);
-    console.log(`    DeepSeek key: ${config.deepseek.api_key ? '✅ configured' : '⚠️  not configured'}`);
-    console.log(`    Telegram: ${config.telegram.bot_token ? '✅ configured' : '⚠️  not configured'}`);
     if (config.telegram.bot_token) {
       const allowlistSize = config.telegram.allowed_user_ids.length;
       if (allowlistSize === 0) {
         console.log(
-          `    Telegram allowlist: ❌ empty — bot will reject every message. ` +
-            `Add your numeric Telegram ID to telegram.allowed_user_ids (DM @userinfobot to find it).`,
+          `    Telegram allowlist: ❌ empty — bot will reject every message.`,
         );
+        console.log(`       → DM @userinfobot to get your numeric ID, then run \`aouo config channels\`.`);
       } else {
         console.log(`    Telegram allowlist: ✅ ${allowlistSize} user(s)`);
       }
     }
-    console.log(`    Cron: ${config.cron.enabled ? '✅ enabled' : 'off'}`);
+    console.log(`    Cron: ${config.cron.enabled ? '✅ enabled' : 'off'}\n`);
 
-    console.log('');
+    process.exitCode = computeExitCode(results);
   });
 
 // ── config ───────────────────────────────────────────────────────────────────
