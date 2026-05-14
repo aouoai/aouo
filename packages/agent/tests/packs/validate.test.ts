@@ -7,7 +7,9 @@ import { validatePackDirectory, linkPack } from '../../src/packs/validate.js';
 import { scanForPacks } from '../../src/packs/loader.js';
 import { STORE_DIR } from '../../src/lib/paths.js';
 
-const PACKS_DIR = join(import.meta.dirname, '..', '..', 'packs');
+// Built-in apps live at monorepo root (`<repo>/apps/`). From this test file
+// (packages/agent/tests/packs/) it's four levels up to the repo root.
+const PACKS_DIR = join(import.meta.dirname, '..', '..', '..', '..', 'apps');
 
 function copyFixturePack(tempDir: string, name = 'notes'): string {
   const source = join(PACKS_DIR, name);

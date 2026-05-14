@@ -1,93 +1,30 @@
 {
-  "name": "@aouo/agent",
-  "version": "0.0.1",
-  "description": "Vertical agent app platform — install packs, not prompts.",
+  "name": "aouo-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "aouo monorepo root — workspace meta for @aouo/agent, @aouo/dashboard, docs.",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "bin": {
-    "aouo": "./dist/bin/aouo.js"
-  },
-  "files": [
-    "dist",
-    "templates",
-    "packs/notes"
-  ],
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "eslint src/ bin/ tests/",
-    "lint:ci": "eslint src/ bin/ tests/ --max-warnings 115",
-    "lint:fix": "eslint src/ bin/ tests/ --fix",
-    "format": "prettier --write 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",
-    "format:check": "prettier --check 'src/**/*.ts' 'bin/**/*.ts' 'tests/**/*.ts'",
-    "typecheck": "tsc --noEmit",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs",
-    "prepublishOnly": "pnpm build && pnpm lint:ci && pnpm typecheck && pnpm test"
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test:coverage",
+    "lint": "pnpm -r lint",
+    "lint:ci": "pnpm -r lint:ci",
+    "lint:fix": "pnpm -r lint:fix",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write 'packages/**/*.{ts,tsx}'",
+    "format:check": "prettier --check 'packages/**/*.{ts,tsx}'",
+    "docs:dev": "cd docs && mint dev",
+    "docs:build": "cd docs && mint build",
+    "docs:validate": "cd docs && mint validate"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aouoai/aouo.git"
   },
-  "keywords": [
-    "agent",
-    "ai",
-    "vertical-agent",
-    "agent-app",
-    "pack",
-    "react-loop",
-    "telegram",
-    "llm"
-  ],
   "author": "aouoai",
   "license": "Apache-2.0",
-  "bugs": {
-    "url": "https://github.com/aouoai/aouo/issues"
-  },
-  "homepage": "https://aouo.ai",
   "engines": {
     "node": ">=22.0.0"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "dependencies": {
-    "@inquirer/prompts": "^8.4.3",
-    "@tavily/core": "^0.7.3",
-    "better-sqlite3": "^12.10.0",
-    "chalk": "^5.3.0",
-    "commander": "^13.0.0",
-    "cron-parser": "^5.5.0",
-    "grammy": "^1.42.0",
-    "gray-matter": "^4.0.3",
-    "marked": "^18.0.1",
-    "p-queue": "^9.1.2",
-    "pino": "^9.0.0",
-    "yaml": "^2.7.0",
-    "zod": "^3.24.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.0.0",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^3.0.0",
-    "eslint": "^9.0.0",
-    "prettier": "^3.4.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.7.0",
-    "typescript-eslint": "^8.0.0",
-    "vitepress": "^1.6.4",
-    "vitest": "^3.0.0"
   }
 }

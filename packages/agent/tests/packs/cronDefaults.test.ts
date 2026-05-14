@@ -5,7 +5,9 @@ import { loadPack, unloadAllPacks } from '../../src/packs/loader.js';
 import { registerPackCronDefaults } from '../../src/packs/cronDefaults.js';
 import { getJob, listJobs, removeJob } from '../../src/lib/scheduler.js';
 
-const PACKS_DIR = join(import.meta.dirname, '..', '..', 'packs');
+// Built-in apps live at monorepo root (`<repo>/apps/`). From this test file
+// (packages/agent/tests/packs/) it's four levels up to the repo root.
+const PACKS_DIR = join(import.meta.dirname, '..', '..', '..', '..', 'apps');
 
 describe('pack cron defaults', () => {
   const config: AouoConfig = {

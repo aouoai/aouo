@@ -10,7 +10,9 @@ import { loadPack, unloadAllPacks } from '../../src/packs/loader.js';
 import { DEFAULT_CONFIG } from '../../src/config/defaults.js';
 import type { Adapter, ToolContext } from '../../src/agent/types.js';
 
-const PACKS_DIR = join(import.meta.dirname, '..', '..', 'packs');
+// Built-in apps live at monorepo root (`<repo>/apps/`). From this test file
+// (packages/agent/tests/tools/) it's four levels up to the repo root.
+const PACKS_DIR = join(import.meta.dirname, '..', '..', '..', '..', 'apps');
 
 const adapter: Adapter = {
   platform: 'test',
