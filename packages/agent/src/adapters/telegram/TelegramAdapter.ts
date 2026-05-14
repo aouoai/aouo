@@ -220,6 +220,36 @@ export class TelegramAdapter {
     return getLoadedPacks().find(p => !p.onboarded) ?? null;
   }
 
+  /**
+   * Decides whether the final agent reply should carry an active-pack badge
+   * for this conversation, and what pack name to show. The badge is meant
+   * to disambiguate when the chat surface itself doesn't already convey
+   * which pack is active.
+   *
+   * Show the badge only when ALL of:
+   *   - ≥ 2 packs are loaded (single-pack mode never ambiguous)
+   *   - The message is NOT in a forum topic (topic title is the badge)
+   *   - The route has a bound `activePack` (otherwise nothing to show)
+   *
+   * Used at every TelegramSessionAdapter instantiation site (text/voice/
+   * photo pipeline, callback handler, poll_answer handler) so all final
+   * replies in the same conversation get a consistent footer.
+   */
+  private resolvePackBadgeArgs(
+    ctx: Context,
+    activePack?: string | null,
+  ): { activePack: string | null; showPackBadge: boolean } {
+    const threadId = extractThreadId(ctx);
+    const loadedCount = getLoadedPacks().length;
+    let resolved: string | null = activePack ?? null;
+    if (!resolved) {
+      const address = buildAddressFromTelegram(ctx);
+      if (address) resolved = getOrCreateRoute(address).activePack;
+    }
+    const showPackBadge = loadedCount > 1 && !threadId && !!resolved;
+    return { activePack: resolved, showPackBadge };
+  }
+
   private createAgent(sessionAdapter: TelegramSessionAdapter): Agent {
     return new Agent(this.config, sessionAdapter, this.provider, {
       packs: getLoadedPacks(),
@@ -302,6 +332,7 @@ export class TelegramAdapter {
       ctx, this.bot,
       this.pendingApprovals, this.pendingChoices,
       this.activePolls, this.paginatedMessages,
+      this.resolvePackBadgeArgs(ctx, activePack),
     );
 
     const agent = this.createAgent(sessionAdapter);
@@ -797,6 +828,7 @@ export class TelegramAdapter {
           ctx as Context, this.bot,
           this.pendingApprovals, this.pendingChoices,
           this.activePolls, this.paginatedMessages,
+          this.resolvePackBadgeArgs(ctx as Context),
         );
 
         const agent = this.createAgent(sessionAdapter);
@@ -858,6 +890,7 @@ export class TelegramAdapter {
           ctx as Context, this.bot,
           this.pendingApprovals, this.pendingChoices,
           this.activePolls, this.paginatedMessages,
+          this.resolvePackBadgeArgs(ctx as Context),
         );
         sessionAdapter.setChatIdOverride(poll.chatId);
         // poll_answer events don't carry a topic — restore the originating

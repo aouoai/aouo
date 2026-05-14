@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  appendPackBadge,
   buildAddressFromTelegram,
   formatRouteSummary,
   isUserAuthorized,
@@ -121,6 +122,24 @@ describe('adapters/telegram/routing', () => {
         [{ text: '📦 a', callback_data: 'pack:a' }],
         [{ text: '📦 b', callback_data: 'pack:b' }],
       ]);
+    });
+  });
+
+  describe('appendPackBadge', () => {
+    it('appends "— <pack>" when show is true and activePack is set', () => {
+      expect(appendPackBadge('Hello', { activePack: 'vocab', show: true })).toBe('Hello\n\n— vocab');
+    });
+
+    it('returns content unchanged when show is false', () => {
+      expect(appendPackBadge('Hello', { activePack: 'vocab', show: false })).toBe('Hello');
+    });
+
+    it('returns content unchanged when activePack is undefined', () => {
+      expect(appendPackBadge('Hello', { show: true })).toBe('Hello');
+    });
+
+    it('returns content unchanged when activePack is null (route never picked)', () => {
+      expect(appendPackBadge('Hello', { activePack: null, show: true })).toBe('Hello');
     });
   });
 

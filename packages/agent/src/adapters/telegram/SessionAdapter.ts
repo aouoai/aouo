@@ -25,7 +25,7 @@ import type {
 } from '../../agent/types.js';
 import { logger } from '../../lib/logger.js';
 import { splitMarkdownForTelegram } from './markdown.js';
-import { extractThreadId } from './routing.js';
+import { appendPackBadge, extractThreadId } from './routing.js';
 import type { SendMessageOptions, PendingApproval, PendingChoice } from './types.js';
 
 // ── Tool Status Labels ───────────────────────────────────────────────────────
@@ -114,6 +114,23 @@ export class TelegramSessionAdapter implements Adapter {
    */
   private threadId: number | undefined;
 
+  /**
+   * Name of the pack currently bound to this route, or null when no pack
+   * has been picked yet. Used only for the final-reply badge — does not
+   * influence routing or tool dispatch (those happen upstream in the
+   * adapter and agent).
+   */
+  private activePack: string | null;
+
+  /**
+   * Whether the final `reply()` should append a "— <pack>" badge. True
+   * only when the chat surface doesn't already convey the pack (e.g.,
+   * forum topic title) AND multiple packs are loaded (so the badge
+   * carries real information). Adapter decides; SessionAdapter just
+   * applies.
+   */
+  private showPackBadge: boolean;
+
   constructor(
     ctx: Context,
     bot: Bot,
@@ -121,6 +138,7 @@ export class TelegramSessionAdapter implements Adapter {
     pendingChoices: Map<string, PendingChoice>,
     activePolls?: Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>,
     paginatedMessages?: Map<number, { pages: string[]; buttons: string; chatId: number }>,
+    opts?: { activePack?: string | null; showPackBadge?: boolean },
   ) {
     this.ctx = ctx;
     this.bot = bot;
@@ -129,6 +147,8 @@ export class TelegramSessionAdapter implements Adapter {
     this.activePolls = activePolls ?? new Map();
     this.paginatedMessages = paginatedMessages ?? new Map();
     this.threadId = extractThreadId(ctx);
+    this.activePack = opts?.activePack ?? null;
+    this.showPackBadge = opts?.showPackBadge ?? false;
   }
 
   // ── Chat Resolution ────────────────────────────────────────────────────────
@@ -213,7 +233,18 @@ export class TelegramSessionAdapter implements Adapter {
     const replyTo = this.autoReplyTo();
     const replyParams = replyTo ? { message_id: replyTo } : undefined;
 
-    const segments = splitMarkdownForTelegram(content, 4000);
+    // Append the active-pack badge to the final reply (when applicable) so
+    // the user can tell which pack is bound to the route without running
+    // `/whereami`. Badge is appended BEFORE splitting so it lands in the
+    // last segment naturally — splitMarkdownForTelegram prefers paragraph
+    // breaks, and the badge starts with `\n\n` so the splitter won't tear
+    // it from the trailing content.
+    const decorated = appendPackBadge(content, {
+      activePack: this.activePack,
+      show: this.showPackBadge,
+    });
+
+    const segments = splitMarkdownForTelegram(decorated, 4000);
 
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];

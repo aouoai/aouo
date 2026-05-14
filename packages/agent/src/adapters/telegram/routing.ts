@@ -97,6 +97,28 @@ export function packPickerKeyboard(
 }
 
 /**
+ * Append a small "— <pack>" footer to a reply so the user can tell which
+ * pack is currently bound to the conversation without running `/whereami`.
+ *
+ * Pure helper, adapter-agnostic. The decision of *when* to badge is the
+ * adapter's responsibility (typically: multiple packs loaded AND the chat
+ * surface doesn't already convey it — e.g., not inside a forum topic
+ * whose title is the pack name).
+ *
+ * Returns the content unchanged when `show` is false or `activePack` is
+ * absent, so callers can pass the decision boolean down without branching.
+ * Uses plain text (no parse_mode dependency) so it composes safely with
+ * adapters that don't render Markdown/HTML.
+ */
+export function appendPackBadge(
+  content: string,
+  opts: { activePack?: string | null; show: boolean },
+): string {
+  if (!opts.show || !opts.activePack) return content;
+  return `${content}\n\n— ${opts.activePack}`;
+}
+
+/**
  * Render a `/whereami` summary line for the user. Pure function so we can
  * assert format in unit tests.
  */
