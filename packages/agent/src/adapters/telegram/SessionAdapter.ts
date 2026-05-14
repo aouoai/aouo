@@ -79,12 +79,10 @@ function buildInlineKeyboard(buttons: string[][]): InlineKeyboard {
 export class TelegramSessionAdapter implements Adapter {
   readonly platform = 'telegram' as const;
   readonly capabilities = {
-    quiz: true,
+    photo: true,
     voice: true,
     audio: true,
-    countdown: true,
-    paginate: true,
-    react: true,
+    document: true,
     editMessage: true,
   } as const;
 
@@ -92,8 +90,6 @@ export class TelegramSessionAdapter implements Adapter {
   private bot: Bot;
   private pendingApprovals: Map<string, PendingApproval>;
   private pendingChoices: Map<string, PendingChoice>;
-  private activePolls: Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>;
-  private paginatedMessages: Map<number, { pages: string[]; buttons: string; chatId: number }>;
 
   /** User-defined tag → Telegram message_id mapping for later reference. */
   private taggedMessages = new Map<string, number>();
@@ -160,16 +156,12 @@ export class TelegramSessionAdapter implements Adapter {
     bot: Bot,
     pendingApprovals: Map<string, PendingApproval>,
     pendingChoices: Map<string, PendingChoice>,
-    activePolls?: Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>,
-    paginatedMessages?: Map<number, { pages: string[]; buttons: string; chatId: number }>,
     opts?: { activePack?: string | null; showPackBadge?: boolean },
   ) {
     this.ctx = ctx;
     this.bot = bot;
     this.pendingApprovals = pendingApprovals;
     this.pendingChoices = pendingChoices;
-    this.activePolls = activePolls ?? new Map();
-    this.paginatedMessages = paginatedMessages ?? new Map();
     this.threadId = extractThreadId(ctx);
     this.activePack = opts?.activePack ?? null;
     this.showPackBadge = opts?.showPackBadge ?? false;
@@ -189,19 +181,7 @@ export class TelegramSessionAdapter implements Adapter {
     return this.threadId ? { message_thread_id: this.threadId } : {};
   }
 
-  /** Override chatId for contexts without ctx.chat (e.g., poll_answer). */
-  setChatIdOverride(id: number): void {
-    this._overrideChatId = id;
-  }
 
-  /**
-   * Override the captured forum-topic id. Used by poll_answer event handlers
-   * where the incoming context lacks `message_thread_id` but we know the
-   * originating topic from the saved poll record.
-   */
-  setThreadIdOverride(id: number | undefined): void {
-    this.threadId = id;
-  }
 
   // ── Queue Infrastructure ───────────────────────────────────────────────────
 
@@ -537,10 +517,17 @@ export class TelegramSessionAdapter implements Adapter {
         return { ok: msgId !== null, messageId: msgId, sentContent: msgId !== null };
       }
 
+      case 'photo': {
+        if (!message.url) return { ok: false, error: 'url is required', sentContent: false };
+        const msgId = await this.sendPhoto(message.url, message.text, {
+          replyTo: message.replyTo,
+          tag: message.tag,
+          parseMode: message.parseMode as SendMessageOptions['parseMode'],
+        });
+        return { ok: true, messageId: msgId, sentContent: true };
+      }
+
       case 'keyboard': {
-        if (message.url) {
-          await this.sendVoice(message.url, undefined, {});
-        }
         const msgId = await this.sendKeyboard(message.text || '', message.buttons || [], {
           replyTo: message.replyTo,
           tag: message.tag,
@@ -548,68 +535,9 @@ export class TelegramSessionAdapter implements Adapter {
         return { ok: true, messageId: msgId, sentContent: true };
       }
 
-      case 'quiz': {
-        const result = await this.sendQuiz(
-          message.text || '',
-          message.options || [],
-          message.correct ?? 0,
-          message.explanation,
-        );
-        return {
-          ok: true,
-          messageId: result.messageId,
-          pollId: result.pollId,
-          sentContent: true,
-        };
-      }
-
-      case 'edit': {
-        if (message.messageId === undefined) {
-          return { ok: false, error: 'message_id is required', sentContent: false };
-        }
-        await this.editMessage(message.messageId, message.text || '', message.buttons);
-        return { ok: true, sentContent: false };
-      }
-
-      case 'delete': {
-        if (message.messageId === undefined) {
-          return { ok: false, error: 'message_id is required', sentContent: false };
-        }
-        const deleted = await this.deleteMsg(message.messageId);
-        return { ok: deleted, sentContent: false };
-      }
-
-      case 'react': {
-        if (message.messageId === undefined) {
-          return { ok: false, error: 'message_id is required', sentContent: false };
-        }
-        await this.react(message.messageId, message.emoji || '👍');
-        return { ok: true, sentContent: false };
-      }
-
       case 'action': {
         await this.sendChatAction(message.action || 'typing');
         return { ok: true, sentContent: false };
-      }
-
-      case 'countdown': {
-        const msgId = await this.sendCountdown(
-          message.text || '',
-          message.seconds || 60,
-          message.expireText || 'Time is up.',
-          { replyTo: message.replyTo, tag: message.tag },
-        );
-        return { ok: true, messageId: msgId, sentContent: true };
-      }
-
-      case 'paginate': {
-        const pages = (message.text || '').split('---PAGE---').map(page => page.trim());
-        const msgId = await this.sendPaginate(
-          pages,
-          JSON.stringify(message.buttons || []),
-          { replyTo: message.replyTo, tag: message.tag },
-        );
-        return { ok: true, messageId: msgId, pageCount: pages.length, sentContent: true };
       }
 
       default:
@@ -652,6 +580,26 @@ export class TelegramSessionAdapter implements Adapter {
       const source = isAbsolute(audio) || audio.startsWith('.') ? new InputFile(audio) : audio;
 
       const msg = await this.bot.api.sendAudio(this.chatId, source, {
+        ...this.threadOpts,
+        caption: caption || undefined,
+        parse_mode: parseMode as any,
+        reply_parameters: replyTo ? { message_id: replyTo } : undefined,
+      });
+
+      this.trackMessage(msg.message_id, opts?.tag);
+      this.hasSentContent = true;
+      return msg.message_id;
+    });
+  }
+
+  /** Send a photo. Accepts URL or absolute local path. */
+  async sendPhoto(photo: string, caption?: string, opts?: SendMessageOptions): Promise<number> {
+    return this.enqueue(async () => {
+      const replyTo = this.autoReplyTo(opts?.replyTo);
+      const parseMode = opts?.parseMode === 'none' ? undefined : (opts?.parseMode || 'HTML');
+      const source = isAbsolute(photo) || photo.startsWith('.') ? new InputFile(photo) : photo;
+
+      const msg = await this.bot.api.sendPhoto(this.chatId, source, {
         ...this.threadOpts,
         caption: caption || undefined,
         parse_mode: parseMode as any,
@@ -712,55 +660,6 @@ export class TelegramSessionAdapter implements Adapter {
     });
   }
 
-  /** Send a native Telegram quiz poll with auto-scoring. */
-  async sendQuiz(
-    question: string,
-    options: string[],
-    correctIndex: number,
-    explanation?: string,
-  ): Promise<{ messageId: number; pollId: string }> {
-    return this.enqueue(async () => {
-      const msg = await this.bot.api.sendPoll(this.chatId, question, options, {
-        ...this.threadOpts,
-        type: 'quiz',
-        correct_option_id: correctIndex,
-        is_anonymous: false,
-        explanation: explanation || undefined,
-      } as Record<string, unknown>);
-
-      this.trackMessage(msg.message_id);
-      this.hasSentContent = true;
-
-      this.activePolls.set(msg.poll!.id, {
-        chatId: this.chatId,
-        ...(this.threadId !== undefined ? { threadId: this.threadId } : {}),
-        options,
-        correctIndex,
-      });
-
-      return { messageId: msg.message_id, pollId: msg.poll!.id };
-    });
-  }
-
-  /** Edit an existing message's text and optionally its buttons. */
-  async editMessage(messageId: number | string, text: string, buttons?: string[][]): Promise<void> {
-    return this.enqueue(async () => {
-      const msgId = typeof messageId === 'string' ? this.taggedMessages.get(messageId) : messageId;
-      if (!msgId) throw new Error(`Message not found: ${messageId}`);
-
-      const replyMarkup = buttons ? buildInlineKeyboard(buttons) : undefined;
-
-      await this.bot.api.editMessageText(this.chatId, msgId, text, {
-        parse_mode: 'HTML',
-        reply_markup: replyMarkup,
-      }).catch(async () => {
-        await this.bot.api.editMessageText(this.chatId, msgId, text, {
-          reply_markup: replyMarkup,
-        }).catch(() => {});
-      });
-    });
-  }
-
   /** Send a document (file) with optional caption. */
   async sendDocument(
     fileUrl: string,
@@ -794,125 +693,6 @@ export class TelegramSessionAdapter implements Adapter {
   async sendChatAction(action: string = 'typing'): Promise<void> {
     return this.enqueue(async () => {
       await this.bot.api.sendChatAction(this.chatId, action as any, this.threadOpts).catch(() => {});
-    });
-  }
-
-  /** Delete a message by ID or tag. */
-  async deleteMsg(messageId: number | string): Promise<boolean> {
-    return this.enqueue(async () => {
-      const msgId = typeof messageId === 'string'
-        ? this.taggedMessages.get(messageId) ?? Number(messageId)
-        : messageId;
-      if (!msgId || isNaN(msgId)) return false;
-      return this.bot.api.deleteMessage(this.chatId, msgId)
-        .then(() => true)
-        .catch(() => false);
-    });
-  }
-
-  /** Add an emoji reaction to a message. */
-  async react(messageId: number | string, emoji: string): Promise<void> {
-    return this.enqueue(async () => {
-      const msgId = typeof messageId === 'string' ? this.taggedMessages.get(messageId) : messageId;
-      if (!msgId) throw new Error(`Message not found: ${messageId}`);
-      await this.bot.api.setMessageReaction(this.chatId, msgId, [
-        { type: 'emoji', emoji: emoji as any },
-      ]).catch(() => {});
-    });
-  }
-
-  /**
-   * Send a countdown timer that auto-edits at sparse intervals.
-   * >10s: every 5s. ≤10s: every 1s.
-   */
-  async sendCountdown(
-    initialText: string,
-    seconds: number,
-    expireText: string,
-    opts?: SendMessageOptions,
-  ): Promise<number> {
-    return this.enqueue(async () => {
-      const replyTo = this.autoReplyTo(opts?.replyTo);
-      const fmt = (s: number) => initialText.replace(/\{seconds\}/g, String(s));
-
-      const msg = await this.bot.api.sendMessage(this.chatId, fmt(seconds), {
-        ...this.threadOpts,
-        parse_mode: 'HTML',
-        reply_parameters: replyTo ? { message_id: replyTo } : undefined,
-      });
-
-      this.trackMessage(msg.message_id, opts?.tag);
-      this.hasSentContent = true;
-
-      let remaining = seconds;
-      const interval = setInterval(async () => {
-        remaining--;
-        if (remaining <= 0) {
-          clearInterval(interval);
-          await this.bot.api.editMessageText(this.chatId, msg.message_id, expireText, {
-            parse_mode: 'HTML',
-          }).catch(() => {});
-        } else if (remaining <= 10 || remaining % 5 === 0) {
-          await this.bot.api.editMessageText(this.chatId, msg.message_id, fmt(remaining), {
-            parse_mode: 'HTML',
-          }).catch(() => {});
-        }
-      }, 1000);
-
-      return msg.message_id;
-    });
-  }
-
-  /**
-   * Send a paginated message. Pages are stored in memory; the user
-   * flips with ⬅️/➡️ buttons that edit the message client-side (no LLM call).
-   */
-  async sendPaginate(
-    pages: string[],
-    trailingButtons: string,
-    opts?: SendMessageOptions,
-  ): Promise<number> {
-    return this.enqueue(async () => {
-      const replyTo = this.autoReplyTo(opts?.replyTo);
-
-      // Parse trailing buttons once
-      let trailingRows: Array<Array<{ text: string; callback_data: string }>> = [];
-      try {
-        const parsed = JSON.parse(trailingButtons) as string[][];
-        trailingRows = parsed.map(row =>
-          row.map(cell => {
-            const parts = cell.split('|');
-            return { text: parts[0] ?? cell, callback_data: parts[1] ?? parts[0] ?? cell };
-          }),
-        );
-      } catch { /* ignore */ }
-
-      const msg = await this.bot.api.sendMessage(this.chatId, pages[0]!, {
-        ...this.threadOpts,
-        parse_mode: 'HTML',
-        reply_parameters: replyTo ? { message_id: replyTo } : undefined,
-        reply_markup: { inline_keyboard: [...trailingRows] },
-      });
-
-      this.trackMessage(msg.message_id, opts?.tag);
-      this.hasSentContent = true;
-
-      // Store for later page flipping
-      this.paginatedMessages.set(msg.message_id, {
-        pages,
-        buttons: trailingButtons,
-        chatId: this.chatId,
-      });
-
-      // Edit to add nav buttons (we needed msg.message_id first)
-      if (pages.length > 1) {
-        const navRow = [{ text: `➡️ 2/${pages.length}`, callback_data: `page:${msg.message_id}:1` }];
-        await this.bot.api.editMessageReplyMarkup(this.chatId, msg.message_id, {
-          reply_markup: { inline_keyboard: [navRow, ...trailingRows] },
-        }).catch(() => {});
-      }
-
-      return msg.message_id;
     });
   }
 

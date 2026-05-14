@@ -12,11 +12,10 @@
  * routes incoming events to the Agent and renders outbound messages.
  *
  * ## Callback Routing
- * Callback queries are dispatched across four tiers:
+ * Callback queries are dispatched across three tiers:
  *   1. `approval_*` — Resolves a pending requestApproval() promise.
  *   2. `choice_*`   — Resolves a pending requestChoice() promise.
- *   3. `page:*`     — Client-side pagination (no LLM call).
- *   4. Other        — Fed into Agent.run() as `[callback] <data>`.
+ *   3. Other        — Fed into Agent.run() as `[callback] <data>`.
  *
  * ## Per-Chat Serialization
  * Multiple concurrent messages in the same chat are serialized via
@@ -148,10 +147,6 @@ export class TelegramAdapter {
   }>();
   /** Below this length, a text message is considered "short" and gets batched. */
   private static readonly SHORT_MESSAGE_THRESHOLD = 80;
-  /** Active quiz polls for answer correlation. */
-  activePolls = new Map<string, { chatId: number; threadId?: number; options: string[]; correctIndex: number }>();
-  /** In-memory paginated message store for client-side page flipping. */
-  paginatedMessages = new Map<number, { pages: string[]; buttons: string; chatId: number }>();
 
   constructor(config: AouoConfig) {
     if (!config.telegram.bot_token) {
@@ -323,23 +318,6 @@ export class TelegramAdapter {
     const activePack = route.activePack;
     const sessionKey = activePack ? conversationSessionKey(address, activePack) : null;
     return { address, route, activePack, sessionKey };
-  }
-
-  /**
-   * Variant of {@link resolveRouteContext} for events that don't carry a
-   * Grammy Context whose `chat`/`message` fields would yield the address
-   * — currently only `poll_answer`, which reaches us with just the saved
-   * `(chatId, threadId)` from the originating quiz.
-   */
-  private resolveRouteContextByAddress(address: ConversationAddress): {
-    route: ConversationRoute;
-    activePack: string | null;
-    sessionKey: string | null;
-  } {
-    const route = getOrCreateRoute(address);
-    const activePack = route.activePack;
-    const sessionKey = activePack ? conversationSessionKey(address, activePack) : null;
-    return { route, activePack, sessionKey };
   }
 
   /**
@@ -521,7 +499,6 @@ export class TelegramAdapter {
     const sessionAdapter = new TelegramSessionAdapter(
       ctx, this.bot,
       this.pendingApprovals, this.pendingChoices,
-      this.activePolls, this.paginatedMessages,
       this.resolvePackBadgeArgs(ctx, activePack),
     );
 
@@ -1204,19 +1181,7 @@ export class TelegramAdapter {
         return;
       }
 
-      // Tier 2: Client-side pagination
-      if (data.startsWith('page:')) {
-        const parts = data.split(':');
-        const msgId = Number(parts[1]);
-        const pageIdx = Number(parts[2]);
-        const entry = this.paginatedMessages.get(msgId);
-        if (entry && pageIdx >= 0 && pageIdx < entry.pages.length) {
-          this.handlePageFlip(entry, msgId, pageIdx);
-        }
-        return;
-      }
-
-      // Tier 3: Fast-path navigation (pack-defined menus)
+      // Tier 2: Fast-path navigation (pack-defined menus)
       if (data.startsWith('nav:') || data === 'menu') {
         const pageId = data === 'menu' ? 'main' : data;
         const result = resolveFastPath(pageId);
@@ -1238,7 +1203,7 @@ export class TelegramAdapter {
         return;
       }
 
-      // Tier 4: Generic callback → route to Agent
+      // Tier 3: Generic callback → route to Agent
       const userId = ctx.from?.id;
       if (!this.isAuthorized(userId)) return;
 
@@ -1292,7 +1257,6 @@ export class TelegramAdapter {
         const sessionAdapter = new TelegramSessionAdapter(
           ctx as Context, this.bot,
           this.pendingApprovals, this.pendingChoices,
-          this.activePolls, this.paginatedMessages,
           this.resolvePackBadgeArgs(ctx as Context, activePack),
         );
 
@@ -1334,87 +1298,6 @@ export class TelegramAdapter {
       }, extractThreadId(ctx as Context));
     });
 
-    // ── Poll Answer Handler (quiz feedback) ──
-
-    this.bot.on('poll_answer', async (ctx) => {
-      const answer = ctx.pollAnswer;
-      const pollId = answer.poll_id;
-      const poll = this.activePolls.get(pollId);
-      if (!poll) return;
-
-      const userId = answer.user?.id;
-      if (!this.isAuthorized(userId)) return;
-
-      const selectedIdx = answer.option_ids?.[0];
-      if (selectedIdx === undefined) return;
-
-      const selectedOption = poll.options[selectedIdx] || `Option ${selectedIdx}`;
-      const isCorrect = selectedIdx === poll.correctIndex;
-      const correctOption = poll.options[poll.correctIndex] || `Option ${poll.correctIndex}`;
-
-      const input = isCorrect
-        ? `[Quiz answer] User answered: "${selectedOption}" ✅ Correct`
-        : `[Quiz answer] User answered: "${selectedOption}" ❌ Wrong (correct: "${correctOption}")`;
-
-      // poll_answer doesn't reach us with a chat-bearing context; rebuild
-      // the originating address from the saved poll so we can reuse the
-      // pack-scoped sessionKey and route binding.
-      const pollAddress: ConversationAddress = {
-        platform: 'tg',
-        chatId: String(poll.chatId),
-        ...(poll.threadId !== undefined ? { threadId: String(poll.threadId) } : {}),
-      };
-      const pollRoute = this.resolveRouteContextByAddress(pollAddress);
-      const pollSessionKey = pollRoute.sessionKey
-        ?? (poll.threadId !== undefined
-          ? `tg:${poll.chatId}:thread:${poll.threadId}`
-          : `tg:${poll.chatId}`);
-
-      logger.info({
-        msg: 'tg_poll_answer',
-        chatId: poll.chatId,
-        threadId: poll.threadId,
-        routeId: pollRoute.route.id,
-        pack: pollRoute.activePack,
-        sessionKey: pollSessionKey,
-        userId,
-        pollId,
-        isCorrect,
-      });
-
-      this.enqueuePerChat(poll.chatId, async () => {
-        const sessionAdapter = new TelegramSessionAdapter(
-          ctx as Context, this.bot,
-          this.pendingApprovals, this.pendingChoices,
-          this.activePolls, this.paginatedMessages,
-          { activePack: pollRoute.activePack, showPackBadge: false },
-        );
-        sessionAdapter.setChatIdOverride(poll.chatId);
-        // poll_answer events don't carry a topic — restore the originating
-        // thread from the recorded poll so the answer ack lands back in the
-        // same forum topic where the quiz was sent.
-        if (poll.threadId !== undefined) sessionAdapter.setThreadIdOverride(poll.threadId);
-        const agent = this.createAgent(sessionAdapter);
-
-        try {
-          const runOpts: Record<string, unknown> = {
-            sessionKey: pollSessionKey,
-            onToken: (delta: string) => sessionAdapter.streamingReply(delta),
-          };
-          if (pollRoute.activePack) runOpts.activePack = pollRoute.activePack;
-          const result: RunResult = await agent.run(input, runOpts as any);
-          await sessionAdapter.finalizeStreamingReply();
-          if (!result.tgSent && result.content) {
-            await sessionAdapter.reply(result.content);
-          }
-        } catch (err) {
-          logger.error({ msg: 'tg_poll_error', chatId: poll.chatId, error: (err as Error).message });
-        }
-      }, poll.threadId);
-
-      this.activePolls.delete(pollId);
-    });
-
     // ── Start Bot ──
 
     logger.info({ msg: 'tg_bot_starting' });
@@ -1437,49 +1320,6 @@ export class TelegramAdapter {
         logger.info({ msg: 'tg_bot_started', username: info.username, pid: process.pid });
       },
     });
-  }
-
-  // ── Page Flip (client-side, no LLM call) ───────────────────────────────────
-
-  private async handlePageFlip(
-    entry: { pages: string[]; buttons: string; chatId: number },
-    msgId: number,
-    pageIdx: number,
-  ): Promise<void> {
-    const pageCount = entry.pages.length;
-    const navRow: Array<{ text: string; callback_data: string }> = [];
-
-    if (pageIdx > 0) {
-      navRow.push({ text: `⬅️ ${pageIdx}/${pageCount}`, callback_data: `page:${msgId}:${pageIdx - 1}` });
-    }
-    if (pageIdx < pageCount - 1) {
-      navRow.push({ text: `➡️ ${pageIdx + 2}/${pageCount}`, callback_data: `page:${msgId}:${pageIdx + 1}` });
-    }
-
-    let trailingRows: Array<Array<{ text: string; callback_data: string }>> = [];
-    try {
-      const parsed = JSON.parse(entry.buttons) as string[][];
-      trailingRows = parsed.map(row =>
-        row.map(cell => {
-          const parts = cell.split('|');
-          return { text: parts[0] ?? cell, callback_data: parts[1] ?? parts[0] ?? cell };
-        }),
-      );
-    } catch { /* ignore */ }
-
-    try {
-      await this.bot.api.editMessageText(entry.chatId, msgId, entry.pages[pageIdx]!, {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            ...(navRow.length ? [navRow] : []),
-            ...trailingRows,
-          ],
-        },
-      });
-    } catch (err) {
-      logger.error({ msg: 'page_flip_failed', msgId, pageIdx, error: (err as Error).message });
-    }
   }
 
   // ── Shutdown ───────────────────────────────────────────────────────────────

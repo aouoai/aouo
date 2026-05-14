@@ -167,40 +167,43 @@ export interface LLMProvider {
 
 export type AdapterMessageType =
   | 'text'
+  | 'photo'
   | 'audio'
   | 'voice'
   | 'document'
   | 'keyboard'
-  | 'quiz'
-  | 'edit'
-  | 'delete'
-  | 'react'
-  | 'action'
-  | 'countdown'
-  | 'paginate';
+  | 'action';
 
 /**
  * Platform-neutral outbound message intent.
  *
  * Tools and skills express what they want to send; adapters decide how to
  * render it on their platform or how to degrade when a feature is unsupported.
+ *
+ * The intentional smallness of this surface is a design choice: every type
+ * here has a near-universal analogue across Telegram, Discord, Slack, and
+ * Feishu, so a pack that only emits these intents stays portable. TG-only
+ * niceties (live countdown, inline poll widgets, message edits, emoji
+ * reactions) were dropped — they either had weak skill-loop value (the
+ * LLM rarely sees the user's reaction) or were better expressed as text +
+ * keyboard buttons (quiz → tap-to-answer keyboard).
  */
 export interface AdapterMessagePayload {
   type: AdapterMessageType;
+  /** Body text or caption for media payloads. */
   text?: string;
+  /** URL or absolute local path for photo / audio / voice / document. */
   url?: string;
+  /** 2D label grid for `keyboard`. Cells use `label|callback_data` syntax. */
   buttons?: string[][];
-  options?: string[];
-  correct?: number;
-  explanation?: string;
-  messageId?: string | number;
+  /** Reply target: another platform message id, an adapter tag, or `'user'`. */
   replyTo?: string | number;
+  /** Adapter-local tag so later turns can address the message. */
   tag?: string;
-  emoji?: string;
+  /** Chat action for `action` type (typing, upload_voice, …). */
   action?: string;
+  /** Platform parse mode override: HTML, Markdown, MarkdownV2, or `'none'`. */
   parseMode?: string;
-  seconds?: number;
-  expireText?: string;
 }
 
 /**
@@ -209,8 +212,6 @@ export interface AdapterMessagePayload {
 export interface AdapterMessageResult {
   ok: boolean;
   messageId?: string | number | null;
-  pollId?: string;
-  pageCount?: number;
   sentContent?: boolean;
   error?: string;
   [key: string]: unknown;
@@ -219,31 +220,30 @@ export interface AdapterMessageResult {
 /**
  * Per-feature declaration of what an adapter can natively render.
  *
- * Used by the message-dispatch tool tier to decide whether to pass a
- * payload through to the adapter unchanged or to degrade it to a more
- * universally supported shape (typically `text` or `keyboard`). Every
- * field is independent because platforms vary along several axes:
- * Telegram has native polls but Discord doesn't; Discord has native
- * threads but Feishu uses interactive cards; etc.
+ * Used by the message-dispatch tier to decide whether to pass a payload
+ * through unchanged or to degrade it to a more universally supported
+ * shape (typically `text`). Every field is independent because platforms
+ * vary along several axes: Telegram has native voice notes, Discord uses
+ * audio files; Feishu does cards, Slack does Block Kit; etc.
+ *
+ * `editMessage` is kept separate from the public message-type list: it
+ * gates the streaming-token replies path (which edits the in-flight
+ * message), not a user-callable type.
  *
  * An undefined `capabilities` on the {@link Adapter} interface is
  * treated as "all features supported" so legacy adapters and test
  * stubs continue to work without modification.
  */
 export interface AdapterCapabilities {
-  /** Native quiz / poll widget with answer correlation. */
-  readonly quiz: boolean;
+  /** Inline photo with optional caption. */
+  readonly photo: boolean;
   /** Native voice-note bubble (typically OGG/Opus). */
   readonly voice: boolean;
   /** Audio file attachment with controls. */
   readonly audio: boolean;
-  /** Live in-place countdown via message edits. */
-  readonly countdown: boolean;
-  /** Client-side pagination over multiple pages via inline buttons. */
-  readonly paginate: boolean;
-  /** Emoji reactions on a target message. */
-  readonly react: boolean;
-  /** In-place message editing (powers streaming token replies). */
+  /** Generic file attachment. */
+  readonly document: boolean;
+  /** In-place message editing — powers streaming token replies. */
   readonly editMessage: boolean;
 }
 
@@ -254,12 +254,10 @@ export interface AdapterCapabilities {
  * is migrated incrementally to declare its capabilities.
  */
 export const FULL_ADAPTER_CAPABILITIES: AdapterCapabilities = {
-  quiz: true,
+  photo: true,
   voice: true,
   audio: true,
-  countdown: true,
-  paginate: true,
-  react: true,
+  document: true,
   editMessage: true,
 };
 

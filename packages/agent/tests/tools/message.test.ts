@@ -72,12 +72,10 @@ describe('tools/message', () => {
 
   describe('degradeMessagePayload', () => {
     const fullCaps: AdapterCapabilities = {
-      quiz: true, voice: true, audio: true,
-      countdown: true, paginate: true, react: true, editMessage: true,
+      photo: true, voice: true, audio: true, document: true, editMessage: true,
     };
     const noCaps: AdapterCapabilities = {
-      quiz: false, voice: false, audio: false,
-      countdown: false, paginate: false, react: false, editMessage: false,
+      photo: false, voice: false, audio: false, document: false, editMessage: false,
     };
 
     it('passes through baseline types unchanged regardless of caps', () => {
@@ -88,19 +86,15 @@ describe('tools/message', () => {
     });
 
     it('passes optional types through when the gate is open', () => {
-      const quiz: AdapterMessagePayload = { type: 'quiz', text: 'Q', options: ['a', 'b'] };
-      expect(degradeMessagePayload(quiz, fullCaps)).toEqual({ payload: quiz });
+      const photo: AdapterMessagePayload = { type: 'photo', url: '/tmp/a.png', text: 'caption' };
+      expect(degradeMessagePayload(photo, fullCaps)).toEqual({ payload: photo });
     });
 
-    it('degrades quiz → keyboard when caps.quiz is false', () => {
-      const quiz: AdapterMessagePayload = { type: 'quiz', text: 'Q?', options: ['Yes', 'No'] };
-      const { payload, note } = degradeMessagePayload(quiz, noCaps);
-      expect(payload).toEqual({
-        type: 'keyboard',
-        text: 'Q?',
-        buttons: [['Yes|quiz_0'], ['No|quiz_1']],
-      });
-      expect(note).toContain('quiz');
+    it('degrades photo → text when caps.photo is false', () => {
+      const photo: AdapterMessagePayload = { type: 'photo', url: '/tmp/a.png', text: 'caption' };
+      const { payload, note } = degradeMessagePayload(photo, noCaps);
+      expect(payload).toEqual({ type: 'text', text: 'caption' });
+      expect(note).toContain('photo');
     });
 
     it('degrades voice → audio when only audio is supported', () => {
@@ -119,16 +113,18 @@ describe('tools/message', () => {
       });
     });
 
-    it('degrades countdown → text with seconds substitution', () => {
-      const cd: AdapterMessagePayload = { type: 'countdown', text: 'Starting in {seconds}s', seconds: 5 };
-      const { payload } = degradeMessagePayload(cd, noCaps);
-      expect(payload).toEqual({ type: 'text', text: 'Starting in 5s' });
+    it('degrades audio → text when caps.audio is false', () => {
+      const audio: AdapterMessagePayload = { type: 'audio', url: '/tmp/a.mp3', text: 'song' };
+      const { payload, note } = degradeMessagePayload(audio, noCaps);
+      expect(payload).toEqual({ type: 'text', text: 'song' });
+      expect(note).toContain('audio');
     });
 
-    it('degrades paginate → text with delimiter collapsed', () => {
-      const p: AdapterMessagePayload = { type: 'paginate', text: 'Page 1---PAGE---Page 2---PAGE---Page 3' };
-      const { payload } = degradeMessagePayload(p, noCaps);
-      expect(payload).toEqual({ type: 'text', text: 'Page 1\n\nPage 2\n\nPage 3' });
+    it('degrades document → text when caps.document is false', () => {
+      const doc: AdapterMessagePayload = { type: 'document', url: '/tmp/file.pdf' };
+      const { payload, note } = degradeMessagePayload(doc, noCaps);
+      expect(payload).toEqual({ type: 'text', text: '/tmp/file.pdf' });
+      expect(note).toContain('document');
     });
   });
 });
