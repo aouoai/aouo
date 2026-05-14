@@ -1,3 +1,9 @@
+packages:
+  - 'packages/*'
+
+# Allow native build steps. `better-sqlite3` ships prebuilt binaries but falls
+# back to a node-gyp compile on some platforms; esbuild / protobufjs ship
+# native helpers consumed by vitest / grpc-style deps.
 allowBuilds:
   better-sqlite3: true
   esbuild: true
