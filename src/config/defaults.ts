@@ -22,7 +22,12 @@ export interface AouoConfig {
   provider: {
     /** Active provider backend. */
     backend: 'gemini' | 'codex' | 'deepseek';
-    /** Model identifier (e.g., 'gemini-2.5-flash', 'gpt-4o'). */
+    /**
+     * Model identifier. Examples by backend:
+     *   - gemini:   'gemini-3-flash-preview' (default), 'gemini-3.1-pro-preview'
+     *   - codex:    'gpt-5.4' / 'gpt-5.5' (OAuth, via ChatGPT subscription)
+     *   - deepseek: 'deepseek-v4-pro', 'deepseek-v4-flash'
+     */
     model: string;
     /** Maximum output tokens per generation. */
     max_tokens: number;

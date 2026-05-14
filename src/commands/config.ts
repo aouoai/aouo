@@ -18,10 +18,15 @@ type LogLevel = AouoConfig['advanced']['log_level'];
 
 const CUSTOM_MODEL = '__custom_model__';
 
+// Recommended model IDs surfaced in the interactive picker. Pickers accept
+// `__custom_model__` so users can also type any current model name not on
+// the list. Keep this short: one pro + one flash per backend is enough —
+// users wanting Lite / Image / older revisions can type them in directly.
+// Update when providers GA a notable new model.
 const PROVIDER_MODELS: Record<ProviderBackend, string[]> = {
-  gemini: ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-pro'],
-  codex: ['gpt-5.4', 'gpt-5.3-codex', 'gpt-5.4-mini'],
-  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  gemini: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview'],
+  codex: ['gpt-5.4', 'gpt-5.5'],
+  deepseek: ['deepseek-v4-pro', 'deepseek-v4-flash'],
 };
 
 const TOOL_GROUPS = [
@@ -253,7 +258,7 @@ async function configureCodexProvider(config: AouoConfig): Promise<void> {
     await codexDeviceLogin();
   }
 
-  const model = await chooseModel('codex', config.provider.backend === 'codex' ? config.provider.model : 'gpt-5.4');
+  const model = await chooseModel('codex', config.provider.backend === 'codex' ? config.provider.model : 'gpt-5-codex');
   config.provider.backend = 'codex';
   config.provider.model = model;
 
