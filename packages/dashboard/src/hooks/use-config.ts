@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 export interface AouoConfig {
   version: string
   provider: {
-    backend: 'gemini' | 'codex' | 'deepseek'
+    backend: 'gemini' | 'codex' | 'deepseek' | 'openai'
     model: string
     max_tokens: number
     temperature: number
@@ -14,6 +14,7 @@ export interface AouoConfig {
   }
   gemini: { api_key: string; vision_model: string }
   deepseek: { api_key: string }
+  openai: { api_key: string }
   tools: {
     enabled: string[]
     web_search: { backend: string; api_key: string; max_results: number }
