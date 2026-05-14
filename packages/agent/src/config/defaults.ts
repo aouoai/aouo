@@ -21,12 +21,13 @@ export interface AouoConfig {
   /** Primary LLM provider settings. */
   provider: {
     /** Active provider backend. */
-    backend: 'gemini' | 'codex' | 'deepseek';
+    backend: 'gemini' | 'codex' | 'deepseek' | 'openai';
     /**
      * Model identifier. Examples by backend:
      *   - gemini:   'gemini-3-flash-preview' (default), 'gemini-3.1-pro-preview'
      *   - codex:    'gpt-5.4' / 'gpt-5.5' (OAuth, via ChatGPT subscription)
      *   - deepseek: 'deepseek-v4-pro', 'deepseek-v4-flash'
+     *   - openai:   'gpt-5.4', 'o3-mini' (Platform API key)
      */
     model: string;
     /** Maximum output tokens per generation. */
@@ -48,6 +49,12 @@ export interface AouoConfig {
   /** DeepSeek-specific settings. */
   deepseek: {
     /** API key for DeepSeek. */
+    api_key: string;
+  };
+
+  /** OpenAI Platform-specific settings. */
+  openai: {
+    /** API key for the OpenAI Platform (sk-...). */
     api_key: string;
   };
 
@@ -187,6 +194,10 @@ export const DEFAULT_CONFIG: AouoConfig = {
   },
 
   deepseek: {
+    api_key: '',
+  },
+
+  openai: {
     api_key: '',
   },
 

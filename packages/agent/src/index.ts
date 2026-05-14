@@ -41,7 +41,8 @@ export { DEFAULT_CONFIG } from './config/defaults.js';
 export { createDefaultConfig, loadConfig, getConfig, saveConfig, persistConfig, resetConfig } from './config/loader.js';
 
 // ── Providers ────────────────────────────────────────────────────────────────
-export { createProvider, GeminiProvider } from './providers/index.js';
+export { createProvider } from './providers/index.js';
+export type { ProviderProfile, ProviderTransport, TransportRequest, ApiMode, AuthType } from './providers/index.js';
 
 // ── Pack System ──────────────────────────────────────────────────────────────
 export type {

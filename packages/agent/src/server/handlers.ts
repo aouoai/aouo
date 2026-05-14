@@ -36,6 +36,7 @@ export function maskConfig(config: AouoConfig): AouoConfig {
   const masked = structuredClone(config);
   if (masked.gemini.api_key) masked.gemini.api_key = maskSecret(masked.gemini.api_key);
   if (masked.deepseek.api_key) masked.deepseek.api_key = maskSecret(masked.deepseek.api_key);
+  if (masked.openai.api_key) masked.openai.api_key = maskSecret(masked.openai.api_key);
   if (masked.tools.web_search.api_key) {
     masked.tools.web_search.api_key = maskSecret(masked.tools.web_search.api_key);
   }
@@ -63,6 +64,7 @@ const EDITABLE_SECTIONS: ReadonlySet<keyof AouoConfig> = new Set([
   'provider',
   'gemini',
   'deepseek',
+  'openai',
   'tools',
   'security',
   'packs',
@@ -194,6 +196,8 @@ function providerCredentialOk(config: AouoConfig): boolean {
       return hasCodexAuth();
     case 'deepseek':
       return Boolean(config.deepseek.api_key);
+    case 'openai':
+      return Boolean(config.openai.api_key);
   }
 }
 
@@ -205,6 +209,8 @@ function providerCredentialDetail(config: AouoConfig): string {
       return hasCodexAuth() ? 'Codex OAuth authenticated' : 'Codex OAuth not authenticated';
     case 'deepseek':
       return config.deepseek.api_key ? 'DeepSeek key configured' : 'DeepSeek key missing';
+    case 'openai':
+      return config.openai.api_key ? 'OpenAI key configured' : 'OpenAI key missing';
   }
 }
 

@@ -27,6 +27,7 @@ const PROVIDER_MODELS: Record<ProviderBackend, string[]> = {
   gemini: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview'],
   codex: ['gpt-5.4', 'gpt-5.5'],
   deepseek: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+  openai: ['gpt-5.4', 'o3-mini'],
 };
 
 const TOOL_GROUPS = [
@@ -192,12 +193,17 @@ async function configureProvider(config: AouoConfig): Promise<void> {
         name: `DeepSeek ${chalk.dim(`(${status(config.deepseek.api_key)})`)}`,
         value: 'deepseek',
       },
+      {
+        name: `OpenAI ${chalk.dim(`(${status(config.openai.api_key)})`)}`,
+        value: 'openai',
+      },
     ],
   });
 
   if (backend === 'gemini') await configureGeminiProvider(config);
   if (backend === 'codex') await configureCodexProvider(config);
   if (backend === 'deepseek') await configureDeepSeekProvider(config);
+  if (backend === 'openai') await configureOpenAIProvider(config);
 }
 
 async function chooseModel(backend: ProviderBackend, current: string): Promise<string> {
@@ -282,6 +288,25 @@ async function configureDeepSeekProvider(config: AouoConfig): Promise<void> {
   config.provider.model = model;
 
   saveAndReport(config, 'DeepSeek provider saved.');
+}
+
+async function configureOpenAIProvider(config: AouoConfig): Promise<void> {
+  console.log();
+  console.log(chalk.dim(`  OpenAI API Key: ${maskKey(config.openai.api_key)}`));
+  console.log(chalk.dim('  Get a key: https://platform.openai.com/api-keys'));
+  console.log();
+
+  const apiKey = await input({
+    message: 'OpenAI API Key (Enter keeps current):',
+    default: config.openai.api_key || undefined,
+  });
+  if (apiKey.trim()) config.openai.api_key = apiKey.trim();
+
+  const model = await chooseModel('openai', config.provider.backend === 'openai' ? config.provider.model : '');
+  config.provider.backend = 'openai';
+  config.provider.model = model;
+
+  saveAndReport(config, 'OpenAI provider saved.');
 }
 
 // ── Tools ────────────────────────────────────────────────────────────────────
