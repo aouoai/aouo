@@ -1,4 +1,15 @@
 import { defineConfig } from 'vitest/config';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// Isolated AOUO_HOME per test run. The runtime singletons (DB, paths) read
+// this at import time, so it MUST be set before vitest loads any test file
+// — config evaluation happens before workers start, satisfying that.
+// Without this, tests would write to ~/.aouo/data/store/state.db and
+// contaminate the developer's actual usage_events / sessions / routes.
+const TEST_HOME = mkdtempSync(join(tmpdir(), 'aouo-test-'));
+process.env['AOUO_HOME'] = TEST_HOME;
 
 export default defineConfig({
   test: {

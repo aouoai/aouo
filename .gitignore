@@ -3,14 +3,23 @@ node_modules/
 
 # Build output
 dist/
+*.tsbuildinfo
 
-# Test coverage
+# npm pack / publish artifacts
+*.tgz
+
+# Caches
 coverage/
+.eslintcache
+.vitest-cache/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 
-# Environment
+# Environment & local overrides
 .env
 .env.*
 !.env.example
+*.local
 
 # Runtime data
 *.db
@@ -38,5 +47,8 @@ pino-pretty
 # Lock files (keep pnpm-lock.yaml)
 package-lock.json
 yarn.lock
+
+# Internal planning / scratch — not part of the published repo
+todo/
 
 cache
