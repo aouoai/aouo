@@ -1,249 +1,321 @@
-# aouo
+# AOUO
 
-> **An app format for AI-native compute.**
-> Each app has its own database, memory, schedules, skills, and permissions. You can open it, audit it, share it, fork it.
+> **Local-first agent apps, packaged as `.aouo` packs.**
+>
+> A pack is more than a prompt or a folder of skills. It is an installable AI app with its own skills, durable storage, memory, schedules, tools, permissions, and UI surface.
 
 [![CI](https://github.com/aouoai/aouo/actions/workflows/ci.yml/badge.svg)](https://github.com/aouoai/aouo/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
-[![npm](https://img.shields.io/badge/npm-%40aouo%2Fagent-cb3837.svg)](https://www.npmjs.com/package/@aouo/agent)
 
-> **Status: pre-alpha (`0.0.1-alpha.2`).** The pack ABI and runtime APIs may change without deprecation. Not yet recommended for shared / multi-tenant deployments.
+> **Status: pre-alpha.** The runtime exists, the pack ABI is moving, and the product shape is still being narrowed. This README explains the direction, not a stable product contract.
 
 ---
 
-## Why this exists
+## The Idea
 
-Every new compute form ended up with an OS. PCs got Windows and macOS. Phones got iOS and Android. The web got the browser. The OS layer wasn't the most exciting part of each era — it just turned out to be the thing that decided what a "real app" looked like.
+Most AI products today start from a chat box.
 
-AI compute is the newest compute form, and the app format is still up for grabs:
+That works for general assistance, but it is a weak shape for long-running, domain-specific work. A useful agent does not only need a system prompt. It needs state. It needs schedules. It needs tools. It needs permissions. It needs a way to store structured data. It needs a way to be installed, inspected, upgraded, shared, and deleted.
 
-- A **Custom GPT** is a system prompt with a few tool stubs. It cannot remember things you didn't explicitly tell it. It cannot run while you sleep. It cannot be shared as a file. It lives on someone else's server.
-- A **Claude Project** is a folder of reference files. Same constraints.
-- A **LangChain / Hermes / CrewAI agent** is a script with a bag of skills. No identity, no schema, no lifecycle, no distribution unit.
+**aouo is an attempt to define that missing app layer.**
 
-What an "AI app" should be — what an Excel sheet or a `.app` bundle is for older eras — has not been settled.
-
-**aouo's answer: the pack.**
+The unit is the **pack**: a local-first agent app bundle. A pack can be an English tutor, a writing assistant, a journaling companion, a research workflow, a content pipeline, or any other narrow agent that should remember things over time and run proactively.
 
 ---
 
-## What a pack is
+## The Host Model
 
-A **pack** is the smallest thing you can install, run, share, fork, or delete that constitutes a complete AI app. It has all six things an app needs.
+aouo has three moving parts:
 
 ```text
-my-vocab-trainer.aouo/
-├── pack.yml                  ← identity, version, permissions, cron
-├── schema.sql                ← the app's own SQLite tables
-├── templates/
-│   ├── USER.md.tmpl          ← the app's view of who you are
-│   └── MEMORY.md.tmpl        ← the app's evolving notes about you
-├── skills/
-│   ├── onboarding/SKILL.md   ← workflow: first-run assessment
-│   ├── study/SKILL.md        ← workflow: today's review session
-│   ├── add/SKILL.md          ← workflow: add new vocab
-│   └── report/SKILL.md       ← workflow: weekly progress
-└── i18n/zh-CN.json           ← optional localization
+aouo runtime
+  Loads packs, runs agents, manages SQLite, memory, tools, schedules,
+  permissions, usage, logs, and optional adapters.
+
+aouo desktop / dashboard
+  Lets users install, configure, chat with, inspect, debug, and control packs.
+
+.aouo pack
+  The installable AI app bundle: skills, memory defaults, optional schema,
+  persist contract, UI surfaces, workflows, permissions, and evals.
 ```
 
-Every pack ships with:
-
-| Component | What it gives the app |
-| --- | --- |
-| Manifest (`pack.yml`) | Identity, version, declared tools, declared permissions, cron schedule |
-| Schema (`schema.sql`) | A real SQLite database. Not "memory bullets" — structured rows you can `SELECT` from |
-| Memory (`USER.md` + `MEMORY.md`) | Plain-text long-term state you can `cat`, `grep`, and `vim` |
-| Skills (`SKILL.md`) | Workflows the agent loads on demand, not a flat bag of prompts |
-| Cron defaults | Schedules the app runs without you asking — `21:00 evening journal`, `Sun 10:00 weekly review` |
-| Permissions | Declared scopes: cron, web search, file access, external commands |
-
-A pack is **the unit of distribution**. Three sample packs ship in this repo:
-
-| Pack | What it does | Has its own |
-| --- | --- | --- |
-| [`notes`](apps/notes) | Daily journaling + weekly reflection | `entries`, `weekly_summaries` tables · 21:00 prompt · Sun 10:00 review |
-| [`create`](apps/create) | Social drafting: capture → ingest → prompt → draft | `materials`, `posts`, `voices` tables · 21:00 prompt · 09:00 draft |
-| [`vocab`](apps/vocab) | CEFR placement + spaced repetition | `words`, `cards`, `reviews`, `intervals`, `assessment_runs` tables · 08:00 study · Sun 10:00 report |
-
-Three packs running on the same machine means three independent SQLite databases, three independent `MEMORY.md` files, three independent cron schedules, and three completely isolated conversation histories.
-
----
-
-## What it looks like to use
-
-The desktop client (in development) makes each pack feel like a real app:
+The closest analogy is not "one chatbot with many prompts." It is closer to:
 
 ```text
-┌────────────────────────────────────────────────────────────────┐
-│  aouo                                              ⚙ settings  │
-├──────────────┬─────────────────────────────────────────────────┤
-│              │  vocab — Study                                   │
-│  📦 notes    │  ─────────────────────────────────────────────   │
-│  📚 vocab  ◀ │                                                  │
-│  ✍️ create   │   You've got 23 cards due today.                 │
-│              │   Want to do 10 now?                             │
-│  + add pack  │                                                  │
-│              │   [ start ]  [ later ]                           │
-│  ─────────   │                                                  │
-│              │   ▌                                              │
-│   Today      │  ─────────────────────────────────────────────   │
-│  21:00 notes │  > /study   review 10                            │
-│  08:00 vocab │  ┌──────────────────────────────────────────┐    │
-│              │  │ message · /skill ▼ · 🎤 · 📎              │    │
-│              │  └──────────────────────────────────────────┘    │
-└──────────────┴─────────────────────────────────────────────────┘
+VS Code  -> extensions
+Obsidian -> plugins
+Raycast  -> extensions
+Docker   -> containers
+
+aouo    -> .aouo packs
 ```
 
-Selecting a pack in the sidebar reveals **the app's own surfaces**:
+The runtime is the host. The pack is the app.
 
-| Tab | What you see |
-| --- | --- |
-| **Chat** | Conversation history scoped to this pack. Switching packs gives you a different agent with different memory, not a context-bleed |
-| **Memory** | `USER.md` and `MEMORY.md` rendered as editable Markdown. You can read what your agent thinks about you, and correct it |
-| **Database** | The pack's SQLite tables, rows, recent writes. `SELECT * FROM reviews ORDER BY created_at DESC` is a click, not a command |
-| **Schedule** | Every cron job the pack runs. Enable, disable, change time, dry-run |
-| **Permissions** | Exactly what the pack can read, write, network-access, or shell out to — declared in the manifest, enforced at runtime |
-| **Tools** | Which built-in tools (`web_search`, `tts`, `db`, etc.) and pack-supplied tools are active |
+---
 
-Inside the chat, the input box has a `/skill` picker:
+## Why Packs
+
+General assistants are powerful, but they are broad. They carry too much context, expose too many tools, and often rely on vague natural-language memory. Skill systems hit the same wall once a user has installed dozens of them — every turn becomes a routing problem.
+
+A pack gives the runtime a hard boundary. When the user opens the `create` pack, the model sees the `create` app: its skills, its memory, its storage contract, its schedules, its recent state. It does not also reason about vocabulary drills, journaling, PDF conversion, and every other skill installed on the machine.
+
+| Problem                        | Pack answer                                                     |
+| ------------------------------ | --------------------------------------------------------------- |
+| Too many skills in context     | Load only the active pack, lazy-load the selected skill         |
+| Long-term memory becomes vague | Structured tables, not only prose                               |
+| Agents only react to messages  | Packs declare schedules and triggers                            |
+| Sharing means copying prompts  | Share an app bundle with storage, permissions, and tests        |
+| Tools become unsafe or opaque  | Declare permissions at the pack level                           |
+| Small models get confused      | Narrow the decision space so cheaper models can do focused work |
+
+The goal is not to beat ChatGPT, Claude, or Codex at raw model ability. The goal is to give AI work a better application boundary.
+
+---
+
+## Example Packs
+
+Three useful early pack shapes:
+
+| Pack               | One-line scenario                                                              | Long-term system it manages                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| **English Coach**  | "Remember what I got wrong last week and quiz me on it this morning."          | Daily missions, writing/speaking feedback, extracted vocabulary, mistake patterns, SRS review, weekly progress |
+| **Creator Studio** | "Capture this link, draft three angles for it, slot the best one on Thursday." | Source library, idea queue, drafts, assets, brand voice, publishing calendar, exports                          |
+| **Daily Journal**  | "Two weeks of notes — what kept coming up?"                                    | Daily notes, goals, mood tags, weekly reviews, recurring patterns, action items                                |
+
+The product should be judged by whether one of these packs keeps a real user coming back for weeks, not by whether the platform sounds broad.
+
+---
+
+## What Exists Today
+
+The current repo is a pre-alpha implementation of the runtime idea. It already contains:
+
+- a pack loader and manifest validator
+- pack-scoped SQLite databases
+- pack-scoped memory files
+- a ReAct-style agent runtime
+- provider integrations
+- a scheduler for proactive pack runs
+- a Telegram channel adapter
+- a local dashboard for configuration and inspection
+- sample packs for notes, content creation, and vocabulary learning
+
+These pieces prove the runtime shape. They are not the final product surface. The next step is to make local usage feel first-class: pack selection, chat, memory, database, schedules, permissions, and status in one coherent client.
+
+---
+
+## What A Pack Contains
+
+A `.aouo` pack starts small. The minimum is two files:
 
 ```text
-> /skill ▼
-  ├─ onboarding   first-run placement test
-  ├─ study        today's review session
-  ├─ add          add a new word
-  └─ report       weekly progress
+simple-pack/
+├── pack.yml
+└── skills/
+    └── main/SKILL.md
 ```
 
-Picking a skill scopes the next turn to just that workflow — the LLM doesn't have to decide which of the pack's skills to run, you told it. **Less ambiguity, less cost, more precision.**
+The runtime still gives that pack durable memory, conversation history, settings, artifacts, and a generic record store. No SQL file is required to begin.
 
----
+A fuller stateful pack adds structure only when useful:
 
-## Why "app" instead of "skill bag"
-
-Most agent frameworks (Hermes, openclaw, LangChain-style) hand the LLM a flat list of every installed skill. If you've installed 30 skills, every turn ships 30 skill descriptions to the LLM — whether you need them or not.
-
-A pack scopes the LLM's working set to one app at a time:
-
-| | Skill-bag agent | aouo (pack-scoped) |
-| --- | --- | --- |
-| Skills sent to LLM per turn | All installed (30+) | Active pack only (4-6) |
-| System prompt tokens for skill index | ~900 | ~150 |
-| LLM's decision space | "Which of 30 skills?" | "Which of 5 skills?" |
-| Cross-app context bleed | Yes | No — fully isolated state |
-
-The savings show up as **lower per-turn cost**, **faster time-to-first-token** (smaller prompts), and **better skill-selection accuracy** (smaller decision space). For small / cheap models like Gemini Flash or DeepSeek, the latency difference is the more noticeable win; for premium models the cost difference adds up.
-
----
-
-## What sets pack-as-app apart, structurally
-
-These differences are not features that competitors can ship next quarter. They follow from the architecture.
-
-### 1. The memory is yours, in plain text, with timestamps
-
-```bash
-$ cat ~/.aouo/data/packs/vocab/MEMORY.md
-$ sqlite3 ~/.aouo/data/store/vocab.db "SELECT * FROM reviews ORDER BY created_at DESC LIMIT 10"
+```text
+english-coach.aouo/
+├── pack.yml
+├── skills/{daily-mission, writing-feedback, weekly-report}/
+├── memory/{soul.md, user.md, state.md}
+├── schema.sql
+├── migrations/
+├── tools/
+└── evals/
 ```
 
-ChatGPT's memory is a black box on their server. Claude's projects don't expose persistent state. With aouo, every byte your agent knows about you lives in a file or row you can open, audit, copy, version-control, or wipe.
-
-### 2. The state is structured, not bulleted
-
-ChatGPT might remember "user is at B2 in English." A `vocab` pack stores 1,200 rows of `(word, ease_factor, srs_interval, last_review, next_due)` and runs an actual spaced-repetition algorithm against them. **One is a remembered fact, the other is a working system.**
-
-### 3. Apps initiate, not just react
-
-Packs declare cron in their manifest. At 21:00 your `notes` pack starts the evening-journal skill. At 08:00 your `vocab` pack queues your due cards. **Your agents have a schedule. ChatGPT and Claude do not.**
-
-### 4. Apps are files you can share
-
-A `.aouo` package is a tar of pack source — manifest, schema, skills, templates. You can `scp` it to a friend, push it to GitHub, fork it, version it. The agent your friend runs is identical to yours up to the data they enter.
-
-### 5. Apps don't bleed into each other
-
-Switching packs in the same chat (or same desktop sidebar) gives you a completely different agent — different memory, different database, different schedule. This is enforced at the runtime level by pack-scoped sessions and qualified skill names. **5 specialists who do not gossip.**
-
-### 6. Apps declare what they touch
-
-Permissions live in the manifest:
+`memory/` is semantic state, not a grab bag: **soul.md** (who this app is), **user.md** (who the user is inside this app), **state.md** (what the app currently knows). Wiring lives in `pack.yml`:
 
 ```yaml
+name: english-coach
+skills:
+  - daily_mission
+  - writing_feedback
+memory:
+  soul: ./memory/soul.md
+cron:
+  - { id: daily_practice, schedule: '0 8 * * *', skill: daily_mission }
 permissions:
-  cron: true
-  web_search: true
-  file_access: false
-  external_command: false
+  tools: [persist, db]
+context:
+  skill_loading: lazy
 ```
 
-The runtime enforces them. You install a pack and know what it can and cannot do — without reading source.
+Full manifest fields, storage levels, persist contract, and skill authoring are in the docs:
+
+- [Pack Spec](https://aouo.ai/concepts/pack-spec/) — manifest fields
+- [Manifest](https://aouo.ai/build-a-pack/manifest/) — `pack.yml` reference
+- [Schema & Persist](https://aouo.ai/build-a-pack/schema/) — storage levels and the persist contract
+- [Skills](https://aouo.ai/build-a-pack/skills/) — `SKILL.md` format
 
 ---
 
-## The ambition: `.aouo` as an open app format
+## Context Compiler
 
-If pack-as-app is the right shape, then `.aouo` should be **a runtime-independent, open file format**. Any agent runtime — aouo, a future re-implementation in Rust or Go, a fork from someone else — should be able to load any pack that conforms to the spec.
+Context is not only an implementation detail. It is a product feature.
 
-Concretely, this means:
+Token cost is not only a billing problem. It is an attention problem. When the model has every installed skill, every tool, and every memory file in scope, part of every turn is spent deciding what to ignore — that makes small models worse and large models more expensive.
 
-- The pack ABI (manifest schema, persist contract, skill format) is versioned and documented
-- The format is plain files (YAML / Markdown / SQL) — no binary, no opaque blobs, no proprietary glue
-- Permissions are declarative — no embedded scripts that bypass the manifest
-- Distribution is via filesystem, git, or HTTP — no central registry required
-- The runtime is Apache-2.0 — packs are owned by their authors
+aouo compiles the smallest useful context for the current app, mode, task, permission set, and token budget. Pack scoping typically cuts routing context by **3–5×** vs a flat skill bag — the exact ratio depends on skill size, but the shape is consistent.
 
-The long-term hope is that "app format for AI compute" gets settled by an open standard rather than four mutually-incompatible walled gardens. `.aouo` is one bid at that standard. There will be others.
+The runtime loads context in layers, cheapest first:
 
----
+| Layer           | Loaded when                             |
+| --------------- | --------------------------------------- |
+| Pack card       | Routing between installed packs         |
+| Skill cards     | After a pack is selected                |
+| Full skill body | Only when a skill is selected or routed |
+| DB rows         | Pulled by the active workflow           |
+| Memory excerpts | Pulled by policy, not pasted wholesale  |
 
-## What ships today
-
-Pre-alpha, but real:
-
-- **Three sample packs** running end-to-end on a Telegram channel (`notes`, `create`, `vocab`)
-- **Four LLM providers** (Gemini · OpenAI · DeepSeek · Codex OAuth)
-- **Pack-scoped runtime isolation** — per-pack SQLite, memory, sessions, qualified skills
-- **Cron scheduler** firing pack skills proactively
-- **Streaming token replies** with in-place message edits, capability-aware degrade across channels
-- **Local dashboard** for config, status, and pack inspection
-- **CLI** (`aouo init / doctor / config / pack / gateway / ui`) for headless deployments
-
-For setup, configuration, CLI reference, and pack authoring: see [aouo.ai](https://aouo.ai) or the [package README](packages/agent/README.md).
+See [Context Compiler](https://aouo.ai/concepts/context-compiler/) for the full policy model, the quota gate, and runtime enforcement.
 
 ---
 
-## What we're building toward
+## The Desktop Direction
 
-- **Desktop client** — Mac/Linux/Windows. Pack-as-app sidebar, in-app DB browser, memory editor, cron timeline, permission panel. The vision above, made real.
-- **`builder` meta-pack** — describe what kind of agent you want; the pack composer drafts manifest, skills, and schema for you. AI-assisted pack authoring.
-- **`.aouo` archive format** — single-file bundles (`pack-name.aouo`) for distribution. Click to install, no git required.
-- **Cross-pack views** — meta queries across all your packs without breaking isolation. "What did my agents do this week."
-- **More channel adapters** — Discord, Slack, Web. The Telegram adapter becomes one of several "remote controls" for your desktop OS.
+The natural primary surface is a local desktop client. Provider setup, pack configuration, memory editing, database inspection, cron debugging, permission review, and pack building all belong here. Chat channels can be added later as optional adapters; they should not be the first product surface.
+
+The picture in our head:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ aouo                                              ⚙ settings │
+├──────────────┬──────────────────────────────────────────────┤
+│ 📦 notes     │  english-coach — Daily Mission                │
+│ 📚 english ◀ │   ────────────────────────────────────────    │
+│ ✍️  create   │   Yesterday you confused "affect / effect" in │
+│              │   three places. Try this:                     │
+│              │                                                │
+│              │   > Rewrite using the right one:              │
+│              │   > Her ____ on the team is obvious.          │
+│              │                                                │
+│              │   ⏱ 9:00am cron · 📁 12 review items due       │
+│              │                                                │
+│              │  ┌─────────────────────────────────────────┐  │
+│              │  │ /writing_feedback                       │  │
+│              │  └─────────────────────────────────────────┘  │
+├──────────────┴──────────────────────────────────────────────┤
+│ chat · memory · db · cron · permissions · logs              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The chat input should support several control levels: natural language routing, `/skill` precise invocation, UI button workflow trigger, and scheduled or event-driven execution. The user should not have to make the model guess everything — if they know they want `/writing_feedback` or `/weekly_report`, the app should let them say so directly.
+
+The runtime stays usable headlessly, but the main user experience should feel like opening apps, not operating a bot.
 
 ---
 
-## What this is not
+## The Builder Direction
 
-To save you time:
+One long-term goal is a **pack builder**: the user describes what they want — "a personal content agent that collects links, summarizes them, asks me for angles, drafts posts, keeps a calendar" — and the builder composes a pack from reusable pieces: skills, tools, memory defaults, optional schema, cron, permissions, evals.
 
-- Not a coding agent. Codex / Claude Code / Cursor cover that. aouo's packs are end-user vertical apps (English tutor, journaling, drafting) — not "help me write Python."
-- Not a prompt marketplace. Custom GPT and various GPT directories cover that. Packs ship state, schedule, and schema, not just prompts.
-- Not an LLM framework. LangChain / LlamaIndex / CrewAI cover that. aouo is the layer above frameworks: where they give you primitives, aouo defines an app contract.
-- Not a SaaS. Everything runs on your machine; your data is on your filesystem.
+This is not random skill mixing. Each skill declares a typed contract — inputs, outputs, reads, writes, required tools, evals, estimated context — so the builder can compile a narrow, coherent app instead of dumping every available capability into the model.
+
+That is a major product bet: **AI-assisted app assembly for people who do not want to design storage, workflows, memory, and schedules manually.**
 
 ---
 
-## Links
+## Sharing, Trust, and Safety
+
+Two artifacts, intentionally separated:
+
+| Artifact                | Contains                                                                              | Share?                            |
+| ----------------------- | ------------------------------------------------------------------------------------- | --------------------------------- |
+| `pack-name.aouo`        | App source: manifest, skills, memory defaults, schema, persist contract, tools, evals | Yes                               |
+| `pack-name.backup.aouo` | User data: memory, DB rows, history, schedule state                                   | Privately only, ideally encrypted |
+
+Permissions are declared in `pack.yml` and shown to the user on install and on every upgrade — new tools, new schedules, new network domains, new file scopes, schema migrations, changed skills. Silent permission escalation is the failure mode this model exists to prevent.
+
+Every action is audited: token spend, tool calls, persist writes, cron firings, network calls. Packs should also ship evals so a third-party upgrade can be regression-checked before being trusted.
+
+Full permission model, sandbox boundaries, signing plans, lifecycle, and audit details: see [Security & Trust](https://aouo.ai/concepts/security/).
+
+---
+
+## What Makes This Different
+
+| Compared with       | aouo is different because                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| ChatGPT / Claude    | Each pack is its own app with its own storage, memory, schedule, permissions, and UI — not one broad conversation |
+| Codex / Claude Code | Codex is for codebases; aouo is for end-user vertical agent apps (learning, writing, journaling, research, ops)   |
+| MCP                 | MCP connects models to tools and data; `.aouo` packages a stateful app one layer above it                         |
+| Skill bags          | Skills are components; packs are bounded apps with state, schedules, permissions, and evals                       |
+
+The difference is not "local ChatGPT." The difference is **installable, stateful AI apps**.
+
+---
+
+## Roadmap
+
+**Near-term**
+
+- Make the local dashboard a real pack workspace, not only a settings UI
+- Local pack chat so packs run without external chat-channel setup
+- Expose pack memory, database, schedules, logs, and permissions in one place
+- Skill picker and workflow buttons for deterministic pack actions
+- Pack import/export
+
+**Mid-term**
+
+- Package the local workspace as a desktop client
+- Sharpen one flagship pack (English Coach or Creator Studio) until it proves recurring use
+- The first useful `.aouo` archive flow
+- A pack builder that assembles skills, memory, storage, persist rules, cron, tools, and evals
+- Per-pack context budgeting visible and tunable
+- Pack-level tests and validation as a publishing requirement
+
+**Long-term**
+
+- `.aouo` as a practical open format for stateful agent apps
+- Sharing, forking, auditing, and upgrading packs safely
+- Keep the adapter boundary clean so external channels can be added later if they prove useful
+- Small, focused models made useful through tight app boundaries
+
+---
+
+## Design Principles
+
+| Principle              | Meaning                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| App, not prompt        | A pack is an app bundle, not a prompt file                                              |
+| State, not just memory | Packs have durable default storage and can grow into typed tables                       |
+| Boundary, not sprawl   | Each pack owns its context, skills, tools, data, and permissions                        |
+| Local-first            | Users own their pack state and can inspect or move it                                   |
+| Portable               | Packs and state are installable, exportable, forkable, shareable                        |
+| Safe by default        | Tools, scripts, files, network, cron, and secrets are permissioned and audited          |
+| UI matters             | Chat is an entry point, not the whole app                                               |
+| Compatible             | Packs can use MCP, model providers, and local tools without becoming a closed ecosystem |
+| Evaluable              | Packs ship tests and improve without breaking behavior                                  |
+| Focused context        | Every model call loads only what the current task needs                                 |
+
+---
+
+## What This Is Not
+
+aouo is not a prompt marketplace. Prompts are only one part of a pack.
+
+aouo is not a generic LLM framework. Frameworks provide primitives; aouo defines an app boundary.
+
+aouo is not trying to replace Codex or Claude Code. Coding agents are for software work. aouo is for user-facing vertical agent apps.
+
+aouo is not trying to replace MCP. MCP is a useful connectivity layer; aouo is an app host and package boundary.
+
+aouo is not trying to make one universal assistant that knows everything. It is trying to make many small agents that each know one domain well, keep their own state, and stay out of each other's context.
+
+---
+
+## Project Links
 
 - Docs: [aouo.ai](https://aouo.ai)
 - Source: [github.com/aouoai/aouo](https://github.com/aouoai/aouo)
-- Issues: [github.com/aouoai/aouo/issues](https://github.com/aouoai/aouo/issues)
-- npm: [`@aouo/agent`](https://www.npmjs.com/package/@aouo/agent)
-- CHANGELOG: [CHANGELOG.md](CHANGELOG.md)
-- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## License
-
-[Apache License 2.0](LICENSE) · Built by [aouoai](https://github.com/aouoai).
+- Package: [`@aouo/agent`](https://www.npmjs.com/package/@aouo/agent)
+- License: [Apache-2.0](LICENSE)

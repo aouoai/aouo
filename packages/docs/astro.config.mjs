@@ -1,9 +1,13 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightThemeBlack from 'starlight-theme-black';
+import remarkMermaid from './src/plugins/remark-mermaid.mjs';
 
 export default defineConfig({
   site: 'https://aouo.ai',
+  markdown: {
+    remarkPlugins: [remarkMermaid],
+  },
   integrations: [
     starlight({
       title: 'AOUO',
@@ -11,9 +15,13 @@ export default defineConfig({
       favicon: '/favicon.svg',
       disable404Route: true,
       customCss: ['./src/styles/docs-primitives.css'],
+      components: {
+        Head: './src/components/CustomHead.astro',
+        MarkdownContent: './src/components/CustomMarkdownContent.astro',
+      },
       logo: {
         src: './public/favicon.svg',
-        alt: 'aouo',
+        alt: 'AOUO',
       },
       head: [
         {
@@ -25,36 +33,35 @@ export default defineConfig({
       plugins: [
         starlightThemeBlack({
           navLinks: [
-            { label: 'Quick Start', link: '/getting-started/quickstart/' },
+            { label: 'Get Started', link: '/getting-started/introduction/' },
           ],
-          footerText: 'Apache-2.0 • local-first vertical agent runtime',
+          footerText: '© 2026 AOUO · Apache-2.0 · [GitHub](https://github.com/aouoai/aouo)',
         }),
       ],
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/aouoai/aouo' },
       ],
-      editLink: {
-        baseUrl: 'https://github.com/aouoai/aouo/edit/main/packages/docs/',
-      },
       sidebar: [
         {
           label: 'Start',
           items: [
-            { label: 'Introduction', slug: 'getting-started/introduction' },
-            { label: 'Quick Start', slug: 'getting-started/quickstart' },
+            { label: 'What is aouo?', slug: 'getting-started/introduction' },
           ],
         },
         {
-          label: 'Runtime',
+          label: 'Vision',
           items: [
-            { label: 'Architecture', slug: 'concepts/architecture' },
-            { label: 'Configuration', slug: 'runtime/configuration' },
-            { label: 'Telegram', slug: 'runtime/telegram' },
-            { label: 'Local Dashboard', slug: 'runtime/local-dashboard' },
+            { label: 'The Host Model', slug: 'concepts/host-model' },
+            { label: 'Why Packs', slug: 'concepts/why-packs' },
+            { label: 'Example Packs', slug: 'concepts/example-packs' },
+            { label: 'Context Compiler', slug: 'concepts/context-compiler' },
+            { label: 'Security & Trust', slug: 'concepts/security' },
+            { label: 'Builder Direction', slug: 'concepts/builder-direction' },
+            { label: 'Desktop Direction', slug: 'concepts/desktop-direction' },
           ],
         },
         {
-          label: 'Packs',
+          label: 'Build a Pack',
           items: [
             { label: 'Five Pillars', slug: 'concepts/five-pillars' },
             { label: 'Pack Spec', slug: 'concepts/pack-spec' },
@@ -65,16 +72,13 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Internals',
+          label: 'Engineering',
           items: [
+            { label: 'Architecture', slug: 'concepts/architecture' },
             { label: 'Telegram Adapter', slug: 'internals/telegram-adapter' },
             { label: 'Message Pipeline', slug: 'internals/message-pipeline' },
             { label: 'Pack Routing', slug: 'internals/pack-routing' },
           ],
-        },
-        {
-          label: 'Reference',
-          items: [{ label: 'CLI', slug: 'reference/cli' }],
         },
       ],
     }),

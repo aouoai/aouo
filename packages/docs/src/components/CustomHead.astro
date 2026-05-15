@@ -1,0 +1,75 @@
+---
+import Default from '@astrojs/starlight/components/Head.astro';
+import jbm400 from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2?url';
+import jbm700 from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff2?url';
+---
+
+<Default><slot /></Default>
+
+<link rel="preload" href={jbm400} as="font" type="font/woff2" crossorigin="anonymous" />
+<link rel="preload" href={jbm700} as="font" type="font/woff2" crossorigin="anonymous" />
+
+<script>
+  import mermaid from 'mermaid';
+
+  const initialTheme =
+    document.documentElement.dataset.theme === 'dark' ? 'dark' : 'default';
+
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: initialTheme,
+    securityLevel: 'loose',
+    fontFamily:
+      "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace",
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    sequence: { useMaxWidth: true },
+    themeVariables: {
+      fontSize: '14px',
+    },
+  });
+
+  const blocks = new WeakMap<Element, string>();
+
+  function render() {
+    const nodes = document.querySelectorAll<HTMLPreElement>('pre.mermaid');
+    nodes.forEach((el) => {
+      if (!blocks.has(el)) {
+        blocks.set(el, el.textContent ?? '');
+      } else {
+        // Restore source so mermaid.run can re-process it after a theme change
+        el.removeAttribute('data-processed');
+        el.textContent = blocks.get(el) ?? '';
+      }
+    });
+    if (nodes.length) {
+      void mermaid.run({ nodes: Array.from(nodes) });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', render);
+  } else {
+    render();
+  }
+
+  // Re-render when Starlight switches between light and dark.
+  const observer = new MutationObserver(() => {
+    const next =
+      document.documentElement.dataset.theme === 'dark' ? 'dark' : 'default';
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: next,
+      securityLevel: 'loose',
+      fontFamily:
+        "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace",
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+      sequence: { useMaxWidth: true },
+      themeVariables: { fontSize: '14px' },
+    });
+    render();
+  });
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
+</script>

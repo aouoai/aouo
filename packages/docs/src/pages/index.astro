@@ -1,556 +1,917 @@
 ---
-import '@fontsource/jetbrains-mono/400.css';
-import '@fontsource/jetbrains-mono/500.css';
-import '@fontsource/jetbrains-mono/600.css';
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 
-const links = [
+const visionCards = [
   {
-    label: 'Quick Start',
-    href: '/getting-started/quickstart/',
-    text: 'Install the runtime, initialize ~/.aouo, configure Telegram, and run the gateway.',
+    href: '/concepts/host-model/',
+    title: 'The Host Model',
+    desc: 'Three intentionally separate parts: runtime, desktop, pack.',
   },
   {
-    label: 'Architecture',
-    href: '/concepts/architecture/',
-    text: 'See how providers, adapters, packs, persist, memory, and cron fit together.',
+    href: '/concepts/why-packs/',
+    title: 'Why Packs',
+    desc: 'What a pack boundary buys you that chat boxes and skill bags cannot.',
   },
   {
-    label: 'Build a Pack',
-    href: '/build-a-pack/first-pack/',
-    text: 'Create a local vertical agent app with skills, schema, tools, and scoped state.',
+    href: '/concepts/example-packs/',
+    title: 'Example Packs',
+    desc: 'English Coach, Creator Studio, Daily Journal — three flagship shapes.',
+  },
+  {
+    href: '/concepts/context-compiler/',
+    title: 'Context Compiler',
+    desc: 'How pack scope cuts routing context by 3–5× vs a flat skill bag.',
+  },
+  {
+    href: '/concepts/builder-direction/',
+    title: 'Builder Direction',
+    desc: 'Where the format is going — AI-assisted app assembly.',
+  },
+  {
+    href: '/concepts/desktop-direction/',
+    title: 'Desktop Direction',
+    desc: 'Local-first workspace; chat channels demoted to optional remotes.',
   },
 ];
 
-const stages = [
-  ['Adapter', 'Normalize channel events'],
-  ['Router', 'Resolve active pack + skill'],
-  ['Agent', 'Run with pack-scoped context'],
-  ['Persist', 'Write durable domain state'],
+const flagships = [
+  {
+    name: 'English Coach',
+    quote: '"Remember what I got wrong last week and quiz me on it this morning."',
+    sub: 'Daily missions · writing feedback · SRS · weekly progress',
+  },
+  {
+    name: 'Creator Studio',
+    quote: '"Capture this link, draft three angles, slot the best on Thursday."',
+    sub: 'Sources · idea queue · drafts · brand voice · publishing calendar',
+  },
+  {
+    name: 'Daily Journal',
+    quote: '"Two weeks of notes — what kept coming up?"',
+    sub: 'Daily notes · goals · mood tags · weekly reviews · action items',
+  },
+];
+
+const comparisonRows = [
+  {
+    label: 'ChatGPT / Claude',
+    sub: 'one broad conversation',
+    diff: 'Each pack is its own app — own storage, memory, schedule, permissions, UI surface.',
+  },
+  {
+    label: 'Codex / Claude Code',
+    sub: 'agents for codebases',
+    diff: 'AOUO is for end-user vertical agents: learning, writing, journaling, research, ops.',
+  },
+  {
+    label: 'MCP',
+    sub: 'connects models to tools',
+    diff: '.aouo packages a stateful app one layer above the connectivity layer.',
+  },
+  {
+    label: 'Skill bags',
+    sub: 'flat collection of skills',
+    diff: 'Packs are bounded apps with state, schedules, permissions, and evals.',
+  },
 ];
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="aouo is a local-first vertical agent app platform." />
-    <link rel="icon" href="/favicon.svg" />
-    <title>aouo - vertical agent app platform</title>
-  </head>
-  <body>
-    <header class="site-header">
-      <nav class="nav" aria-label="Primary">
-        <a class="brand" href="/" aria-label="aouo home">
-          <img src="/favicon.svg" alt="" />
-          <span>AOUO</span>
-        </a>
-        <div class="nav-links">
-          <a href="/getting-started/quickstart/">Docs</a>
-          <a href="https://github.com/aouoai/aouo">GitHub</a>
-        </div>
-      </nav>
-    </header>
-
-    <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Local-first vertical agent runtime</p>
-          <h1>Build agent apps that keep state, schedule work, and run through real channels.</h1>
-          <p class="lead">
-            aouo turns a vertical agent into a local app contract: a pack owns skills,
-            memory, schema, cron jobs, permissions, and a durable persist boundary.
-          </p>
-          <div class="actions">
-            <a class="button primary" href="/getting-started/quickstart/">Quick Start</a>
-            <a class="button secondary" href="/getting-started/introduction/">Read the model</a>
-          </div>
-        </div>
-
-        <div class="diagram-shell" aria-label="aouo runtime flow">
-          <svg class="runtime-diagram" viewBox="0 0 760 520" role="img" aria-labelledby="flow-title flow-desc">
-            <title id="flow-title">aouo runtime flow</title>
+<StarlightPage
+  frontmatter={{
+    title: 'HOME',
+    description: 'Local-first agent apps, packaged as .aouo packs.',
+    template: 'splash',
+    hero: {
+      title: 'Local-first agent apps,<br/>packaged as .aouo packs.',
+      tagline:
+        'A pack is more than a prompt or a folder of skills. It is an installable AI app with its own skills, durable storage, memory, schedules, tools, permissions, and UI surface.',
+      actions: [
+        {
+          text: 'Get Started',
+          link: '/getting-started/introduction/',
+          icon: 'right-arrow',
+          variant: 'primary',
+        },
+        {
+          text: 'View on GitHub',
+          link: 'https://github.com/aouoai/aouo',
+          icon: 'external',
+          variant: 'minimal',
+        },
+      ],
+    },
+  }}
+>
+  <div class="container-section aouo-csection" id="flow">
+    <div class="container-wrapper">
+      <div class="container container-padding aouo-csection-inner not-content">
+        <header class="aouo-section-head">
+          <p class="eyebrow">The host model</p>
+          <h2>One runtime. Many isolated packs. Each pack is its own app.</h2>
+        </header>
+        <div class="aouo-diagram-shell" aria-label="aouo host model">
+          <svg
+            class="aouo-diagram"
+            viewBox="0 0 880 560"
+            role="img"
+            aria-labelledby="flow-title flow-desc"
+          >
+            <title id="flow-title">aouo host model</title>
             <desc id="flow-desc">
-              Channel adapters normalize messages, the router selects an active pack,
-              the agent executes a skill, and persist, memory, and cron close the loop.
+              A user event enters through the desktop client, the runtime dispatches it to the
+              active pack, and each pack remains its own isolated app with skills, memory,
+              storage, schedule, permissions, and UI surface.
             </desc>
-            <defs>
-              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2937" />
-              </marker>
-            </defs>
+            <rect x="0" y="0" width="880" height="560" rx="10" fill="#ffffff" />
 
-            <rect x="0" y="0" width="760" height="520" rx="8" fill="#ffffff" />
-
-            <g class="lane incoming">
-              <rect x="44" y="96" width="134" height="54" rx="8" />
-              <text x="111" y="118" text-anchor="middle">Telegram</text>
-              <text x="111" y="137" text-anchor="middle" class="small">messages</text>
-
-              <rect x="44" y="222" width="134" height="54" rx="8" />
-              <text x="111" y="244" text-anchor="middle">Web UI</text>
-              <text x="111" y="263" text-anchor="middle" class="small">config + chat</text>
+            <!-- USER entry -->
+            <g class="aouo-user">
+              <circle cx="440" cy="32" r="5" />
+              <text x="455" y="36" class="aouo-small">user · event</text>
             </g>
 
-            <g class="core">
-              <rect x="260" y="126" width="130" height="74" rx="8" />
-              <text x="325" y="154" text-anchor="middle">Adapter</text>
-              <text x="325" y="174" text-anchor="middle" class="small">normalize event</text>
-
-              <rect x="452" y="126" width="130" height="74" rx="8" />
-              <text x="517" y="154" text-anchor="middle">Router</text>
-              <text x="517" y="174" text-anchor="middle" class="small">pack + skill</text>
-
-              <rect x="310" y="278" width="222" height="92" rx="8" />
-              <text x="421" y="309" text-anchor="middle">Active Pack</text>
-              <text x="421" y="331" text-anchor="middle" class="small">skills · tools · permissions</text>
-              <text x="421" y="350" text-anchor="middle" class="small">schema · memory templates</text>
+            <!-- DESKTOP strip -->
+            <g class="aouo-lane aouo-lane--desktop">
+              <rect x="60" y="58" width="760" height="62" rx="10" />
+              <text x="80" y="84" class="aouo-eyebrow">CLIENT</text>
+              <text x="80" y="106" class="aouo-host-title aouo-host-title--sm">Desktop</text>
+              <text x="800" y="96" text-anchor="end" class="aouo-small">install · chat · memory · db · cron · permissions</text>
             </g>
 
-            <g class="state">
-              <rect x="92" y="410" width="138" height="58" rx="8" />
-              <text x="161" y="434" text-anchor="middle">Persist</text>
-              <text x="161" y="453" text-anchor="middle" class="small">pack DB</text>
-
-              <rect x="312" y="410" width="138" height="58" rx="8" />
-              <text x="381" y="434" text-anchor="middle">Memory</text>
-              <text x="381" y="453" text-anchor="middle" class="small">USER/MEMORY</text>
-
-              <rect x="532" y="410" width="138" height="58" rx="8" />
-              <text x="601" y="434" text-anchor="middle">Cron</text>
-              <text x="601" y="453" text-anchor="middle" class="small">scheduled jobs</text>
+            <!-- RUNTIME band -->
+            <g class="aouo-lane aouo-lane--host">
+              <rect x="60" y="156" width="760" height="106" rx="12" />
+              <text x="80" y="184" class="aouo-eyebrow">HOST</text>
+              <text x="80" y="216" class="aouo-host-title">aouo runtime</text>
+              <text x="80" y="240" class="aouo-small">
+                loader · agent · scheduler · context compiler · permissions · usage
+              </text>
             </g>
 
-            <path class="flow-line" d="M178 123 C220 123 220 142 260 150" />
-            <path class="flow-line" d="M178 249 C226 249 226 195 260 178" />
-            <path class="flow-line direct" d="M390 163 L452 163" />
-            <path class="flow-line direct" d="M517 200 C517 238 472 248 440 278" />
-            <path class="flow-line direct" d="M356 370 C306 398 246 408 230 430" />
-            <path class="flow-line direct" d="M421 370 L381 410" />
-            <path class="flow-line direct" d="M490 370 C520 395 556 408 572 430" />
+            <!-- 4 pack tiles, each with its own skills + cron -->
+            <g class="aouo-pack" data-pack="notes">
+              <rect x="60" y="320" width="170" height="220" rx="10" />
+              <text x="78" y="352" class="aouo-pack-name">notes</text>
+              <text x="78" y="370" class="aouo-pack-id">pack-id: notes</text>
+              <line x1="74" y1="386" x2="216" y2="386" class="aouo-pack-rule" />
+              <text x="78" y="408" class="aouo-pack-skill">/quick_note</text>
+              <text x="78" y="430" class="aouo-pack-skill">/daily_review</text>
+              <text x="78" y="452" class="aouo-pack-skill">/weekly_digest</text>
+              <text x="78" y="474" class="aouo-pack-skill">/find_thread</text>
+              <line x1="74" y1="494" x2="216" y2="494" class="aouo-pack-rule" />
+              <text x="78" y="516" class="aouo-pack-cron">cron · 0 18 * * 0</text>
+            </g>
 
-            <circle class="pulse p1" r="4">
-              <animateMotion dur="5s" repeatCount="indefinite" path="M178 123 C220 123 220 142 260 150 L390 163 L452 163" />
+            <g class="aouo-pack aouo-pack--active" data-pack="english-coach">
+              <rect x="256" y="320" width="170" height="220" rx="10" />
+              <text x="274" y="352" class="aouo-pack-name">english-coach</text>
+              <text x="274" y="370" class="aouo-pack-id">pack-id: english</text>
+              <line x1="270" y1="386" x2="412" y2="386" class="aouo-pack-rule" />
+              <text x="274" y="408" class="aouo-pack-skill">/daily_mission</text>
+              <text x="274" y="430" class="aouo-pack-skill">/writing_feedback</text>
+              <text x="274" y="452" class="aouo-pack-skill">/srs_review</text>
+              <text x="274" y="474" class="aouo-pack-skill">/weekly_report</text>
+              <line x1="270" y1="494" x2="412" y2="494" class="aouo-pack-rule" />
+              <text x="274" y="516" class="aouo-pack-cron">cron · 0 8 * * *</text>
+            </g>
+
+            <g class="aouo-pack" data-pack="create">
+              <rect x="452" y="320" width="170" height="220" rx="10" />
+              <text x="470" y="352" class="aouo-pack-name">create</text>
+              <text x="470" y="370" class="aouo-pack-id">pack-id: create</text>
+              <line x1="466" y1="386" x2="608" y2="386" class="aouo-pack-rule" />
+              <text x="470" y="408" class="aouo-pack-skill">/capture_source</text>
+              <text x="470" y="430" class="aouo-pack-skill">/draft_angles</text>
+              <text x="470" y="452" class="aouo-pack-skill">/compose_post</text>
+              <text x="470" y="474" class="aouo-pack-skill">/schedule_post</text>
+              <line x1="466" y1="494" x2="608" y2="494" class="aouo-pack-rule" />
+              <text x="470" y="516" class="aouo-pack-cron">cron · 0 9 * * 1-5</text>
+            </g>
+
+            <g class="aouo-pack" data-pack="journal">
+              <rect x="648" y="320" width="170" height="220" rx="10" />
+              <text x="666" y="352" class="aouo-pack-name">daily-journal</text>
+              <text x="666" y="370" class="aouo-pack-id">pack-id: journal</text>
+              <line x1="662" y1="386" x2="804" y2="386" class="aouo-pack-rule" />
+              <text x="666" y="408" class="aouo-pack-skill">/daily_note</text>
+              <text x="666" y="430" class="aouo-pack-skill">/mood_track</text>
+              <text x="666" y="452" class="aouo-pack-skill">/weekly_review</text>
+              <text x="666" y="474" class="aouo-pack-skill">/action_items</text>
+              <line x1="662" y1="494" x2="804" y2="494" class="aouo-pack-rule" />
+              <text x="666" y="516" class="aouo-pack-cron">cron · 0 17 * * 0</text>
+            </g>
+
+            <!-- Trunk: desktop → runtime (ambient dashed) -->
+            <path class="aouo-flow-line aouo-flow-line--trunk" d="M 440 38 L 440 58" />
+            <path class="aouo-flow-line aouo-flow-line--trunk" d="M 440 120 L 440 156" />
+
+            <!-- Branches: runtime → each pack -->
+            <path class="aouo-flow-line" d="M 440 262 C 440 290, 145 300, 145 320" />
+            <path class="aouo-flow-line aouo-flow-line--direct" d="M 440 262 C 440 290, 341 300, 341 320" />
+            <path class="aouo-flow-line" d="M 440 262 C 440 290, 537 300, 537 320" />
+            <path class="aouo-flow-line" d="M 440 262 C 440 290, 733 300, 733 320" />
+
+            <!-- Pulses: user → desktop → runtime → branch into a pack, staggered -->
+            <circle class="aouo-pulse aouo-pulse--p1" r="4.5">
+              <animateMotion dur="5.2s" repeatCount="indefinite"
+                path="M 440 32 L 440 90 L 440 208 C 440 280, 341 295, 341 360" />
             </circle>
-            <circle class="pulse p2" r="4">
-              <animateMotion dur="6s" begin="1.1s" repeatCount="indefinite" path="M517 200 C517 238 472 248 440 278 L421 370 L381 410" />
+            <circle class="aouo-pulse aouo-pulse--p2" r="4.5">
+              <animateMotion dur="6.2s" begin="1.2s" repeatCount="indefinite"
+                path="M 440 32 L 440 90 L 440 208 C 440 270, 145 290, 145 360" />
             </circle>
-            <circle class="pulse p3" r="4">
-              <animateMotion dur="6.4s" begin="2.2s" repeatCount="indefinite" path="M421 370 C356 390 246 408 230 430" />
+            <circle class="aouo-pulse aouo-pulse--p3" r="4.5">
+              <animateMotion dur="6.8s" begin="2.4s" repeatCount="indefinite"
+                path="M 440 32 L 440 90 L 440 208 C 440 270, 733 290, 733 360" />
+            </circle>
+            <circle class="aouo-pulse aouo-pulse--p4" r="4.5">
+              <animateMotion dur="7.4s" begin="3.6s" repeatCount="indefinite"
+                path="M 440 32 L 440 90 L 440 208 C 440 280, 537 295, 537 360" />
             </circle>
           </svg>
         </div>
-      </section>
+      </div>
+    </div>
+  </div>
 
-      <section class="start" aria-label="Start points">
-        {links.map((item) => (
-          <a class="link-card" href={item.href}>
-            <strong>{item.label}</strong>
-            <span>{item.text}</span>
-          </a>
-        ))}
-      </section>
+  <div class="container-section aouo-csection" id="shape">
+    <div class="container-wrapper">
+      <div class="container container-padding aouo-csection-inner not-content">
+        <header class="aouo-section-head">
+          <p class="eyebrow">The shape of a pack</p>
+          <h2>A hard runtime boundary around six things</h2>
+        </header>
+        <pre
+          class="aouo-code">pack = skills + storage + memory + schedule + permissions + UI surface</pre>
+        <p class="aouo-prose">
+          The runtime is the host. The pack is the app. The dashboard is where the two meet the
+          user.
+        </p>
+      </div>
+    </div>
+  </div>
 
-      <section class="contract">
-        <div>
-          <p class="eyebrow">Runtime contract</p>
-          <h2>Apps are packs. Workflows are skills. State only enters through persist.</h2>
+  <div class="container-section aouo-csection aouo-csection--tinted" id="vision">
+    <div class="container-wrapper">
+      <div class="container container-padding aouo-csection-inner not-content">
+        <header class="aouo-section-head">
+          <p class="eyebrow">Vision</p>
+          <h2>Six concepts that define the format</h2>
+        </header>
+        <div class="aouo-card-grid">
+          {
+            visionCards.map((c) => (
+              <a class="aouo-card" href={c.href}>
+                <span class="aouo-card-title">
+                  {c.title}
+                  <span class="aouo-card-arrow">→</span>
+                </span>
+                <span class="aouo-card-desc">{c.desc}</span>
+              </a>
+            ))
+          }
         </div>
-        <ol>
-          {stages.map(([name, text]) => (
-            <li>
-              <strong>{name}</strong>
-              <span>{text}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
-    </main>
-  </body>
-</html>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-section aouo-csection" id="packs">
+    <div class="container-wrapper">
+      <div class="container container-padding aouo-csection-inner not-content">
+        <header class="aouo-section-head">
+          <p class="eyebrow">Pack shapes</p>
+          <h2>Three flagship pack shapes the format is designed for</h2>
+        </header>
+        <div class="aouo-flagships">
+          {
+            flagships.map((p) => (
+              <article>
+                <h3>{p.name}</h3>
+                <p class="quote">{p.quote}</p>
+                <p class="sub">{p.sub}</p>
+              </article>
+            ))
+          }
+        </div>
+        <p class="aouo-prose aouo-section-foot">
+          A pack is judged by whether one of these keeps a real user coming back for weeks. The
+          platform is downstream of the pack.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-section aouo-csection aouo-csection--inverted" id="not">
+    <div class="container-wrapper">
+      <div class="container container-padding aouo-csection-inner not-content">
+        <header class="aouo-section-head">
+          <p class="eyebrow">What it isn't</p>
+          <h2>Not local ChatGPT. Not a framework. Not a marketplace.</h2>
+        </header>
+        <div class="aouo-compare">
+          <div class="aouo-compare-head">
+            <span>Compared with</span>
+            <span>AOUO is different because</span>
+          </div>
+          {
+            comparisonRows.map((r) => (
+              <div class="aouo-compare-row">
+                <div class="aouo-compare-left">
+                  <span class="aouo-compare-name">{r.label}</span>
+                  <span class="aouo-compare-sub">{r.sub}</span>
+                </div>
+                <div class="aouo-compare-diff">{r.diff}</div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-section aouo-csection aouo-csection--end" id="start">
+    <div class="container-wrapper">
+      <div class="container container-padding aouo-csection-inner not-content">
+        <header class="aouo-section-head">
+          <p class="eyebrow">Quick start</p>
+          <h2>Try the runtime. Build a pack.</h2>
+        </header>
+        <div class="aouo-cta">
+          <div class="aouo-cta-text">
+            <p class="aouo-prose">
+              Pre-alpha. The pack ABI is moving. The runtime, scheduler, sample packs, and
+              dashboard are in. Shape is still being narrowed — which is exactly when feedback
+              matters.
+            </p>
+            <div class="aouo-cta-actions">
+              <a class="aouo-cta-btn aouo-cta-btn--primary" href="/getting-started/introduction/">
+                Get started <span aria-hidden="true">→</span>
+              </a>
+              <a class="aouo-cta-btn" href="https://github.com/aouoai/aouo">
+                View on GitHub <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          </div>
+          <pre class="aouo-terminal"><span class="aouo-terminal-head">try it locally</span><span class="aouo-terminal-line"><span class="aouo-terminal-prompt">$</span> git clone https://github.com/aouoai/aouo</span><span class="aouo-terminal-line"><span class="aouo-terminal-prompt">$</span> cd aouo &amp;&amp; pnpm install</span><span class="aouo-terminal-line"><span class="aouo-terminal-prompt">$</span> pnpm --filter @aouo/agent dev</span><span class="aouo-terminal-comment"># pre-alpha · no install artifact yet</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</StarlightPage>
 
 <style>
-  :root {
-    color-scheme: light;
-    --aouo-mono:
-      'JetBrains Mono',
-      ui-monospace,
-      'SFMono-Regular',
-      'SF Mono',
-      Consolas,
-      'Liberation Mono',
-      monospace;
-    --ink: #171717;
-    --muted: #5f5f66;
-    --soft: #f7f7f8;
-    --paper: #ffffff;
-    --line: #e5e7eb;
-    --blue: #2563eb;
-    --green: #059669;
-    --amber: #d97706;
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      sans-serif;
-    background: var(--paper);
-    color: var(--ink);
+  /* ---------- Section chrome (one container-section per block) ---------- */
+  .aouo-csection-inner {
+    padding-block: 5.5rem !important;
   }
 
-  * {
-    box-sizing: border-box;
+  /* Tinted / inverted bg stays inside the content column;
+     only the .container-section bottom border bleeds out to the viewport edges. */
+  .aouo-csection--tinted .aouo-csection-inner {
+    background: color-mix(in oklab, var(--muted) 60%, transparent);
   }
 
-  body {
-    margin: 0;
-    min-height: 100vh;
-    background: var(--paper);
+  .aouo-csection--inverted .aouo-csection-inner {
+    background: #0f0f10;
+    color: #e6e6e8;
   }
 
-  a {
-    color: inherit;
-    text-decoration: none;
+  .aouo-csection--inverted .aouo-section-head .eyebrow {
+    color: #a3a3a8;
   }
 
-  main {
-    width: min(1180px, calc(100% - 32px));
-    margin: 0 auto;
-    padding: 0 0 64px;
+  .aouo-csection--inverted .aouo-section-head h2 {
+    color: #f4f4f5;
   }
 
-  .site-header {
-    position: sticky;
-    top: 0;
-    z-index: 20;
+  /* Kill the bottom border on the last block so the site footer's
+     top border is the only divider — no doubled line. */
+  .aouo-csection--end {
+    border-bottom: 0 !important;
+  }
+
+  /* ---------- Host model diagram ---------- */
+  .aouo-diagram-shell {
     width: 100%;
-    background: rgba(255, 255, 255, 0.86);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-  }
-
-  .nav {
-    width: min(1180px, calc(100% - 32px));
-    min-height: 72px;
-    margin: 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .brand,
-  .nav-links {
-    display: flex;
-    align-items: center;
-  }
-
-  .brand {
-    gap: 10px;
-    font-weight: 700;
-    letter-spacing: 0;
-  }
-
-  .brand img {
-    width: 24px;
-    height: 24px;
-  }
-
-  .nav-links {
-    gap: 22px;
-    color: var(--muted);
-    font-size: 14px;
-  }
-
-  .nav-links a:hover {
-    color: var(--ink);
-  }
-
-  .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 0.92fr) minmax(420px, 1.08fr);
-    gap: clamp(34px, 6vw, 76px);
-    align-items: center;
-    min-height: calc(100vh - 72px);
-    padding: clamp(58px, 8vw, 94px) 0 42px;
-  }
-
-  .eyebrow {
-    margin: 0 0 16px;
-    color: var(--blue);
-    font: 600 12px/1.4 var(--aouo-mono);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  h1,
-  h2,
-  p {
-    letter-spacing: 0;
-  }
-
-  h1 {
-    max-width: 760px;
-    margin: 0;
-    font-size: clamp(46px, 6.5vw, 82px);
-    line-height: 0.94;
-    font-weight: 760;
-  }
-
-  .lead {
-    max-width: 620px;
-    margin: 26px 0 0;
-    color: var(--muted);
-    font-size: clamp(18px, 1.8vw, 21px);
-    line-height: 1.58;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 32px;
-  }
-
-  .button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 44px;
-    padding: 0 18px;
-    border-radius: 8px;
-    font-weight: 650;
-    font-size: 14px;
-  }
-
-  .button.primary {
-    background: var(--ink);
-    color: #fff;
-  }
-
-  .button.secondary {
-    border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.68);
-    color: var(--ink);
-  }
-
-  .diagram-shell {
-    width: 100%;
-    aspect-ratio: 760 / 520;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
-    box-shadow: 0 24px 72px rgba(15, 23, 42, 0.08);
+    max-width: 960px;
+    margin: 2.25rem auto 0;
+    aspect-ratio: 880 / 560;
+    border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 24px 72px rgba(15, 23, 42, 0.06);
     overflow: hidden;
   }
 
-  .runtime-diagram {
+  :global([data-theme='dark']) .aouo-diagram-shell {
+    border-color: var(--border);
+    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.35);
+  }
+
+  .aouo-diagram {
     width: 100%;
     height: 100%;
     display: block;
   }
 
-  .runtime-diagram rect {
+  .aouo-diagram rect {
     vector-effect: non-scaling-stroke;
   }
 
-  .runtime-diagram text {
-    fill: var(--ink);
-    font-size: 18px;
-    font-weight: 720;
+  .aouo-diagram text {
+    fill: #171717;
+    font-family: var(--aouo-mono, ui-monospace, monospace);
   }
 
-  .runtime-diagram .small {
-    fill: var(--muted);
+  .aouo-diagram .aouo-eyebrow {
+    fill: #6b7280;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+  }
+
+  .aouo-diagram .aouo-host-title {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .aouo-diagram .aouo-host-title--sm {
+    font-size: 16px;
+  }
+
+  .aouo-diagram .aouo-small {
+    fill: #5f5f66;
     font-size: 13px;
     font-weight: 500;
   }
 
-  .incoming rect {
+  .aouo-user circle {
+    fill: #1f2937;
+  }
+
+  .aouo-lane--desktop rect {
+    fill: #fafafa;
+    stroke: #d4d4d8;
+    stroke-width: 1;
+  }
+
+  .aouo-lane--host rect {
+    fill: #ffffff;
+    stroke: #1f2937;
+    stroke-width: 1.5;
+  }
+
+  .aouo-pack rect {
+    fill: #f9fafb;
+    stroke: #d4d4d8;
+    stroke-width: 1;
+  }
+
+  .aouo-pack .aouo-pack-name {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+  }
+
+  .aouo-pack .aouo-pack-id {
+    fill: #71717a;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+  }
+
+  .aouo-pack .aouo-pack-rule {
+    stroke: #e4e4e7;
+    stroke-width: 1;
+  }
+
+  .aouo-pack .aouo-pack-skill {
+    fill: #3f3f46;
+    font-size: 12.5px;
+  }
+
+  .aouo-pack .aouo-pack-cron {
+    fill: #71717a;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+
+  .aouo-pack--active rect:first-of-type {
     fill: #eff6ff;
+    stroke: #2563eb;
+    stroke-width: 1.5;
+  }
+
+  .aouo-pack--active .aouo-pack-rule {
     stroke: #bfdbfe;
   }
 
-  .core rect {
-    fill: #ffffff;
-    stroke: #d4d4d8;
+  .aouo-pack--active .aouo-pack-skill {
+    fill: #1e3a8a;
   }
 
-  .state rect {
-    fill: #f0fdf4;
-    stroke: #bbf7d0;
+  .aouo-pack--active .aouo-pack-cron {
+    fill: #2563eb;
   }
 
-  .flow-line {
+  .aouo-flow-line {
     fill: none;
     stroke: #1f2937;
-    stroke-width: 2;
+    stroke-width: 1.5;
     stroke-linecap: round;
-    marker-end: url(#arrow);
-    stroke-dasharray: 7 9;
-    animation: dash 18s linear infinite;
+    stroke-dasharray: 6 8;
+    animation: aouo-dash 18s linear infinite;
     vector-effect: non-scaling-stroke;
   }
 
-  .flow-line.direct {
+  .aouo-flow-line--direct {
     stroke-dasharray: 0;
+    stroke-width: 2;
+    stroke: #2563eb;
   }
 
-  .pulse {
-    fill: var(--blue);
-    opacity: 0.58;
+  .aouo-flow-line--trunk {
+    stroke: #9ca3af;
+    stroke-width: 1.25;
+    stroke-dasharray: 4 6;
+  }
+
+  .aouo-pulse {
+    fill: #2563eb;
+    opacity: 0.7;
     filter: drop-shadow(0 4px 10px rgba(37, 99, 235, 0.28));
   }
 
-  .p2 {
-    fill: var(--green);
+  .aouo-pulse--p2 {
+    fill: #059669;
+    filter: drop-shadow(0 4px 10px rgba(5, 150, 105, 0.28));
   }
 
-  .p3 {
-    fill: var(--amber);
+  .aouo-pulse--p3 {
+    fill: #d97706;
+    filter: drop-shadow(0 4px 10px rgba(217, 119, 6, 0.28));
   }
 
-  .start {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+  .aouo-pulse--p4 {
+    fill: #7c3aed;
+    filter: drop-shadow(0 4px 10px rgba(124, 58, 237, 0.28));
   }
 
-  .link-card {
-    min-height: 132px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 18px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.74);
-    padding: 20px;
-  }
-
-  .link-card:hover {
-    border-color: #cbd5e1;
-    background: #fff;
-  }
-
-  .link-card strong {
-    font-size: 18px;
-  }
-
-  .link-card span {
-    color: var(--muted);
-    line-height: 1.55;
-  }
-
-  .contract {
-    display: grid;
-    grid-template-columns: 0.9fr 1.1fr;
-    gap: 42px;
-    align-items: start;
-    margin-top: 12px;
-    padding: 36px 0 0;
-  }
-
-  .contract h2 {
-    max-width: 520px;
-    margin: 0;
-    font-size: clamp(28px, 4vw, 44px);
-    line-height: 1.05;
-  }
-
-  .contract ol {
-    display: grid;
-    gap: 10px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .contract li {
-    display: grid;
-    grid-template-columns: 120px 1fr;
-    gap: 18px;
-    align-items: baseline;
-    border-bottom: 1px solid var(--line);
-    padding: 0 0 14px;
-  }
-
-  .contract li strong {
-    font: 600 13px/1.4 var(--aouo-mono);
-    color: var(--blue);
-    text-transform: uppercase;
-  }
-
-  .contract li span {
-    color: var(--muted);
-    line-height: 1.55;
-  }
-
-  @keyframes dash {
+  @keyframes aouo-dash {
     to {
       stroke-dashoffset: -160;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .flow-line {
+    .aouo-flow-line {
       animation: none;
     }
-
-    .pulse {
+    .aouo-pulse {
       display: none;
     }
   }
 
-  @media (max-width: 920px) {
-    .hero,
-    .start,
-    .contract {
+  .aouo-section-head {
+    margin-bottom: 2.25rem;
+  }
+
+  .aouo-section-head .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+  }
+
+  .aouo-section-head .eyebrow::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.7;
+    display: inline-block;
+  }
+
+  .aouo-section-head h2 {
+    margin: 0;
+    font-size: 1.75rem;
+    line-height: 1.35;
+    letter-spacing: -0.015em;
+    font-weight: 700;
+    color: var(--foreground);
+    max-width: 36ch;
+    text-wrap: balance;
+  }
+
+  .aouo-code {
+    margin: 0 0 1.25rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid var(--aouo-doc-code-border, var(--border));
+    border-radius: 10px;
+    background: var(--aouo-doc-code-bg, var(--muted));
+    font-family: var(--aouo-mono);
+    font-size: 0.875rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--foreground);
+  }
+
+  .aouo-prose {
+    margin: 0;
+    color: var(--muted-foreground);
+    max-width: 60ch;
+    line-height: 1.75;
+    font-size: 1rem;
+  }
+
+  .aouo-section-foot {
+    margin-top: 2.25rem;
+  }
+
+  .aouo-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+  }
+
+  .aouo-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 1.5rem 1.5rem;
+    border: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  :global([data-theme='dark']) .aouo-card {
+    border-color: var(--border);
+  }
+
+  .aouo-card:hover {
+    border-color: var(--foreground);
+    background: color-mix(in oklab, var(--muted) 50%, transparent);
+  }
+
+  .aouo-card-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    color: var(--foreground);
+  }
+
+  .aouo-card-arrow {
+    color: var(--muted-foreground);
+    transition:
+      transform 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .aouo-card:hover .aouo-card-arrow {
+    transform: translateX(2px);
+    color: var(--foreground);
+  }
+
+  .aouo-card-desc {
+    color: var(--muted-foreground);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .aouo-flagships {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.25rem;
+  }
+
+  .aouo-flagships article {
+    padding: 1.75rem 1.75rem;
+    border: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+    border-radius: 10px;
+  }
+
+  :global([data-theme='dark']) .aouo-flagships article {
+    border-color: var(--border);
+  }
+
+  .aouo-flagships h3 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    color: var(--foreground);
+  }
+
+  .aouo-flagships .quote {
+    margin: 0 0 0.85rem;
+    color: var(--foreground);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .aouo-flagships .sub {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .aouo-compare {
+    margin-top: 0.5rem;
+    border: 1px solid #27272a;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .aouo-compare-head,
+  .aouo-compare-row {
+    display: grid;
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+
+  .aouo-compare-head {
+    padding: 1rem 1.5rem;
+    background: #18181b;
+    border-bottom: 1px solid #27272a;
+    font-family: var(--aouo-mono, ui-monospace, monospace);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #a3a3a8;
+  }
+
+  .aouo-compare-row {
+    padding: 1.5rem 1.5rem;
+    border-bottom: 1px solid #27272a;
+    align-items: baseline;
+  }
+
+  .aouo-compare-row:last-child {
+    border-bottom: 0;
+  }
+
+  .aouo-compare-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .aouo-compare-name {
+    color: #f4f4f5;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+  }
+
+  .aouo-compare-sub {
+    color: #a3a3a8;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+  }
+
+  .aouo-compare-diff {
+    color: #d4d4d8;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
+  @media (max-width: 760px) {
+    .aouo-compare-head,
+    .aouo-compare-row {
       grid-template-columns: 1fr;
-    }
-
-    .hero {
-      min-height: auto;
-      padding-top: 52px;
-    }
-
-    .diagram-shell {
-      max-width: 760px;
+      gap: 0.4rem;
     }
   }
 
-  @media (max-width: 620px) {
-    main {
-      width: min(100% - 24px, 1180px);
-      padding-top: 16px;
-    }
+  /* ---------- CTA ---------- */
+  .aouo-cta {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 1.25rem;
+    align-items: stretch;
+  }
 
-    .nav {
-      align-items: flex-start;
-      flex-direction: column;
-      gap: 14px;
-      padding-bottom: 14px;
-    }
-
-    .nav-links {
-      gap: 16px;
-    }
-
-    .hero {
-      padding-top: 42px;
-    }
-
-    .diagram-shell {
-      aspect-ratio: 1 / 0.86;
-    }
-
-    .runtime-diagram text {
-      font-size: 20px;
-    }
-
-    .contract li {
+  @media (max-width: 760px) {
+    .aouo-cta {
       grid-template-columns: 1fr;
-      gap: 6px;
+    }
+  }
+
+  .aouo-cta-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.25rem;
+  }
+
+  .aouo-cta-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .aouo-cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.65rem 1.05rem;
+    border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+    border-radius: 8px;
+    color: var(--foreground);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  :global([data-theme='dark']) .aouo-cta-btn {
+    border-color: var(--border);
+  }
+
+  .aouo-cta-btn:hover {
+    border-color: var(--foreground);
+    background: color-mix(in oklab, var(--muted) 50%, transparent);
+  }
+
+  .aouo-cta-btn--primary {
+    background: var(--foreground);
+    color: var(--background);
+    border-color: var(--foreground);
+  }
+
+  .aouo-cta-btn--primary:hover {
+    background: color-mix(in oklab, var(--foreground) 85%, transparent);
+    border-color: var(--foreground);
+  }
+
+  .aouo-terminal {
+    margin: 0;
+    padding: 1.5rem 1.5rem 1.25rem;
+    background: #0f0f10;
+    color: #e4e4e7;
+    border: 1px solid #27272a;
+    border-radius: 10px;
+    font-family: var(--aouo-mono, ui-monospace, monospace);
+    font-size: 0.8rem;
+    line-height: 2;
+    display: flex;
+    flex-direction: column;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .aouo-terminal-head {
+    color: #71717a;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+
+  .aouo-terminal-line {
+    color: #e4e4e7;
+  }
+
+  .aouo-terminal-prompt {
+    color: #a3c14a;
+    margin-right: 0.4rem;
+  }
+
+  .aouo-terminal-comment {
+    color: #71717a;
+    margin-top: 0.5rem;
+  }
+
+  @media (max-width: 640px) {
+    .aouo-csection-inner {
+      padding-block: 2.75rem !important;
+    }
+
+    .aouo-section-head h2 {
+      font-size: 1.25rem;
+    }
+
+    .aouo-code,
+    .aouo-terminal {
+      font-size: 0.75rem;
     }
   }
 </style>
