@@ -23,6 +23,7 @@ import {
   handlePutConfig,
 } from './handlers.js';
 import { handleChatStream } from './chat.js';
+import { handleListMemory, handleReadMemoryFile } from './memory.js';
 import { generateToken, safeEqualToken } from './token.js';
 import { serveStatic } from './static.js';
 import { logger } from '../lib/logger.js';
@@ -175,13 +176,14 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
     sendJson(res, 200, handleGetPacks());
     return;
   }
-  // /api/packs/:pack[/chat|/history]
-  const packMatch = path.match(/^\/api\/packs\/([^/]+)(?:\/(chat|history))?$/);
+  // /api/packs/:pack[/<segments>]
+  const packMatch = path.match(/^\/api\/packs\/([^/]+)(\/.*)?$/);
   if (packMatch) {
     const packName = packMatch[1]!;
-    const sub = packMatch[2];
+    const segs = (packMatch[2] ?? '').split('/').filter(Boolean);
 
-    if (!sub) {
+    // /api/packs/:pack — detail
+    if (segs.length === 0) {
       if (method !== 'GET') {
         sendJson(res, 405, { error: 'Method not allowed' });
         return;
@@ -195,7 +197,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
       return;
     }
 
-    if (sub === 'chat') {
+    if (segs[0] === 'chat' && segs.length === 1) {
       if (method !== 'POST') {
         sendJson(res, 405, { error: 'Method not allowed' });
         return;
@@ -211,7 +213,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
       return;
     }
 
-    if (sub === 'history') {
+    if (segs[0] === 'history' && segs.length === 1) {
       if (method !== 'GET') {
         sendJson(res, 405, { error: 'Method not allowed' });
         return;
@@ -225,6 +227,34 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
         return;
       }
       sendJson(res, 200, history);
+      return;
+    }
+
+    if (segs[0] === 'memory') {
+      if (method !== 'GET') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      if (segs.length === 1) {
+        const list = handleListMemory(packName);
+        if (!list) {
+          sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+          return;
+        }
+        sendJson(res, 200, list);
+        return;
+      }
+      if (segs.length === 2) {
+        const result = handleReadMemoryFile(packName, segs[1]!);
+        if (!result.ok) {
+          sendJson(res, result.status, { error: result.error });
+          return;
+        }
+        sendJson(res, 200, result.file);
+        return;
+      }
+      // memory/<file>/<extra> is not a thing
+      sendJson(res, 404, { error: `Unknown endpoint: ${method} ${path}` });
       return;
     }
   }

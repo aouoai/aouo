@@ -18,9 +18,9 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { usePackDetail } from '@/hooks/use-pack'
 import { ChatPanel } from '@/components/chat/ChatPanel'
+import { MemoryTab } from '@/components/workspace/MemoryTab'
 
-const FUTURE_TABS = [
-  { value: 'memory', label: 'Memory', icon: FolderTree },
+const PHASE5_TABS = [
   { value: 'storage', label: 'Storage', icon: Database },
   { value: 'cron', label: 'Cron', icon: Clock },
   { value: 'logs', label: 'Logs', icon: ScrollText },
@@ -99,7 +99,14 @@ export function PackWorkspacePage() {
                 <MessageSquare className="size-3.5" />
                 Chat
               </TabsTrigger>
-              {FUTURE_TABS.map((t) => {
+              <TabsTrigger
+                value="memory"
+                className="gap-1.5 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                <FolderTree className="size-3.5" />
+                Memory
+              </TabsTrigger>
+              {PHASE5_TABS.map((t) => {
                 const Icon = t.icon
                 return (
                   <TabsTrigger
@@ -123,14 +130,21 @@ export function PackWorkspacePage() {
             <ChatPanel key={pack.name} pack={pack} />
           </TabsContent>
 
-          {FUTURE_TABS.map((t) => (
+          <TabsContent
+            value="memory"
+            className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
+          >
+            <MemoryTab key={pack.name} pack={pack.name} />
+          </TabsContent>
+
+          {PHASE5_TABS.map((t) => (
             <TabsContent
               key={t.value}
               value={t.value}
               className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
             >
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {t.label} viewer arrives in Phase 5.
+                {t.label} viewer arrives in a follow-up commit.
               </div>
             </TabsContent>
           ))}

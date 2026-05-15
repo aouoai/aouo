@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pack workspace **Memory tab** (read-only). Left rail lists canonical files (USER.md / MEMORY.md) plus any extra `*.md` under the pack's data dir; right pane renders markdown via `react-markdown`. Backed by `GET /api/packs/:pack/memory` and `GET /api/packs/:pack/memory/:file` — strict filename guard rejects path traversal and non-markdown reads.
 - `GET /api/packs/:pack/history` returns the dashboard's bound session id and its most recent user/assistant turns (default 50, capped at 200). The pack workspace uses it to rehydrate the chat panel on mount so refreshes no longer drop the conversation.
 - Chat panel surfaces a per-message **Retry** affordance on the trailing failed assistant turn. Retry drops the failed pair and re-streams the prior user input so the transcript stays clean.
 - Dashboard pack workspace at `/packs/:pack`: each loaded pack becomes a per-app surface with its own breadcrumb topbar, centered display name, settings affordance, and a Chat tab backed by the SSE chat endpoint. Memory / Storage / Cron / Logs tabs are placeholders for Phase 5.
