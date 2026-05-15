@@ -18,7 +18,8 @@ import { DEFAULT_CONFIG } from '../config/defaults.js';
 import { AOUO_HOME, CONFIG_PATH, DB_PATH, PACKS_DIR, RULES_PATH, SOUL_PATH, isInitialized } from '../lib/paths.js';
 import { hasCodexAuth } from '../lib/auth.js';
 import { loadManifestFile } from '../packs/manifest.js';
-import { scanForPacks } from '../packs/loader.js';
+import { scanForPacks, getLoadedPacks } from '../packs/loader.js';
+import { getAllSkills } from '../packs/skillRegistry.js';
 
 // ── Masking ──────────────────────────────────────────────────────────────────
 
@@ -263,4 +264,73 @@ export function handleGetPacks(): PacksResponse {
   }
 
   return { packs };
+}
+
+// ── Pack detail ──────────────────────────────────────────────────────────────
+
+export interface SkillInfo {
+  /** Bare skill id (e.g., `daily_mission`). */
+  name: string;
+  /** Pack-qualified identifier (e.g., `english:daily_mission`). */
+  qualifiedName: string;
+  /** Human-readable label from frontmatter. */
+  displayName: string;
+  /** Short description from frontmatter (may be empty). */
+  description: string;
+}
+
+export interface CronJobInfo {
+  id: string;
+  schedule: string;
+  skill: string;
+  enabledByDefault: boolean;
+}
+
+export interface PackDetailResponse {
+  name: string;
+  version: string;
+  displayName: string;
+  description: string;
+  path: string;
+  skills: SkillInfo[];
+  cron: CronJobInfo[];
+}
+
+/**
+ * Detailed view of a single loaded pack used by the dashboard pack workspace.
+ *
+ * Sources data from the runtime registries (`getLoadedPacks` + `getAllSkills`)
+ * so descriptions reflect parsed SKILL.md frontmatter. Returns `null` when the
+ * pack is not currently loaded — callers should respond 404.
+ */
+export function handleGetPackDetail(name: string): PackDetailResponse | null {
+  const loaded = getLoadedPacks().find((p) => p.manifest.name === name);
+  if (!loaded) return null;
+
+  const m = loaded.manifest;
+  const skills: SkillInfo[] = getAllSkills()
+    .filter((s) => s.pack === name)
+    .map((s) => ({
+      name: s.name,
+      qualifiedName: s.qualifiedName,
+      displayName: s.displayName,
+      description: s.description,
+    }));
+
+  const cron: CronJobInfo[] = m.cron_defaults.map((c) => ({
+    id: c.id,
+    schedule: c.schedule,
+    skill: c.skill,
+    enabledByDefault: c.enabled_by_default,
+  }));
+
+  return {
+    name: m.name,
+    version: m.version,
+    displayName: m.display_name,
+    description: m.description ?? '',
+    path: loaded.sourcePath,
+    skills,
+    cron,
+  };
 }

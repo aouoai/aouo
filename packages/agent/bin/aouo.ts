@@ -471,8 +471,21 @@ async function runUiStart(options: UiStartOptions): Promise<void> {
     return;
   }
 
-  const { ensureDirectories } = await import('../src/lib/paths.js');
+  const { ensureDirectories, PACKS_DIR } = await import('../src/lib/paths.js');
   ensureDirectories();
+
+  // Packs must be loaded before the server accepts requests: /api/packs/:pack
+  // and /api/packs/:pack/chat both read from the in-process pack registry, so
+  // a bare `aouo ui start` against an empty registry would return 404 for
+  // every pack until something else loaded them.
+  const { loadConfig } = await import('../src/config/loader.js');
+  const { loadAllPacks } = await import('../src/packs/loader.js');
+  const config = loadConfig();
+  const loadedPacks = await loadAllPacks(
+    [PACKS_DIR, ...config.packs.scan_dirs],
+    config.packs.enabled,
+    config,
+  );
 
   const { startUiServer } = await import('../src/server/index.js');
   const port = Number(options.port ?? DEFAULT_UI_PORT) || DEFAULT_UI_PORT;
@@ -507,6 +520,7 @@ async function runUiStart(options: UiStartOptions): Promise<void> {
   console.log(`   URL:  ${handle.url}`);
   console.log(`   Port: ${handle.port} (bound to 127.0.0.1)`);
   console.log(`   Bundle: ${dashboardDir ?? '(API only — no SPA)'}`);
+  console.log(`   Packs: ${loadedPacks.length} loaded`);
   if (devToken) {
     console.log(`   Dev URL (vite HMR): http://127.0.0.1:5173/?token=${devToken}`);
   }

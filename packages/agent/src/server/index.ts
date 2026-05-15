@@ -16,6 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import {
   handleGetConfig,
   handleGetConfigRaw,
+  handleGetPackDetail,
   handleGetPacks,
   handleGetStatus,
   handlePutConfig,
@@ -169,6 +170,21 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
   // GET /api/packs
   if (method === 'GET' && path === '/api/packs') {
     sendJson(res, 200, handleGetPacks());
+    return;
+  }
+  // GET /api/packs/:pack
+  if (method === 'GET' && path.startsWith('/api/packs/')) {
+    const packName = path.slice('/api/packs/'.length);
+    if (!packName || packName.includes('/')) {
+      sendJson(res, 400, { error: 'Invalid pack name' });
+      return;
+    }
+    const detail = handleGetPackDetail(packName);
+    if (!detail) {
+      sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+      return;
+    }
+    sendJson(res, 200, detail);
     return;
   }
 
