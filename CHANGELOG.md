@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `POST /api/packs/:pack/chat` streams an Agent turn as Server-Sent Events (`token` / `tool_call` / `tool_result` / `dispatch` / `done` / `error`). Dashboard sessions are stored under `platform='web'` alongside the existing Telegram routes.
 - `GET /api/packs/:pack` returns a loaded pack's detail (manifest, parsed SKILL.md metadata, cron defaults) for the dashboard pack workspace.
 - `WebSessionAdapter` — a non-Telegram `Adapter` implementation that turns Agent events into Server-Sent Events for the local dashboard.
 - `aouo ui start` now loads installed packs at boot so the dashboard API can resolve them.

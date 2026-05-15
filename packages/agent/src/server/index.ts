@@ -21,6 +21,7 @@ import {
   handleGetStatus,
   handlePutConfig,
 } from './handlers.js';
+import { handleChatStream } from './chat.js';
 import { generateToken, safeEqualToken } from './token.js';
 import { serveStatic } from './static.js';
 import { logger } from '../lib/logger.js';
@@ -173,7 +174,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
     return;
   }
   // GET /api/packs/:pack
-  if (method === 'GET' && path.startsWith('/api/packs/')) {
+  if (method === 'GET' && path.startsWith('/api/packs/') && !path.endsWith('/chat')) {
     const packName = path.slice('/api/packs/'.length);
     if (!packName || packName.includes('/')) {
       sendJson(res, 400, { error: 'Invalid pack name' });
@@ -185,6 +186,23 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
       return;
     }
     sendJson(res, 200, detail);
+    return;
+  }
+  // POST /api/packs/:pack/chat
+  if (method === 'POST' && path.startsWith('/api/packs/') && path.endsWith('/chat')) {
+    const packName = path.slice('/api/packs/'.length, -'/chat'.length);
+    if (!packName || packName.includes('/')) {
+      sendJson(res, 400, { error: 'Invalid pack name' });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = await readJson(req);
+    } catch (err) {
+      sendJson(res, 400, { error: `Invalid JSON body: ${(err as Error).message}` });
+      return;
+    }
+    await handleChatStream(req, res, packName, body);
     return;
   }
 
