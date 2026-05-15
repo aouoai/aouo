@@ -20,9 +20,9 @@ import { usePackDetail } from '@/hooks/use-pack'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { MemoryTab } from '@/components/workspace/MemoryTab'
 import { StorageTab } from '@/components/workspace/StorageTab'
+import { CronTab } from '@/components/workspace/CronTab'
 
 const PHASE5_TABS = [
-  { value: 'cron', label: 'Cron', icon: Clock },
   { value: 'logs', label: 'Logs', icon: ScrollText },
 ] as const
 
@@ -113,6 +113,13 @@ export function PackWorkspacePage() {
                 <Database className="size-3.5" />
                 Storage
               </TabsTrigger>
+              <TabsTrigger
+                value="cron"
+                className="gap-1.5 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                <Clock className="size-3.5" />
+                Cron
+              </TabsTrigger>
               {PHASE5_TABS.map((t) => {
                 const Icon = t.icon
                 return (
@@ -149,6 +156,13 @@ export function PackWorkspacePage() {
             className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
           >
             <StorageTab key={pack.name} pack={pack.name} />
+          </TabsContent>
+
+          <TabsContent
+            value="cron"
+            className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
+          >
+            <CronTab key={pack.name} pack={pack.name} />
           </TabsContent>
 
           {PHASE5_TABS.map((t) => (

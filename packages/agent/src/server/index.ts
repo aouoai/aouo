@@ -25,6 +25,7 @@ import {
 import { handleChatStream } from './chat.js';
 import { handleListMemory, handleReadMemoryFile } from './memory.js';
 import { handleListStorageTables, handleReadStorageRows } from './storage.js';
+import { handleCronAction, handleListPackCron, type CronAction } from './cron.js';
 import { generateToken, safeEqualToken } from './token.js';
 import { serveStatic } from './static.js';
 import { logger } from '../lib/logger.js';
@@ -284,6 +285,42 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
           return;
         }
         sendJson(res, 200, result.data);
+        return;
+      }
+    }
+
+    if (segs[0] === 'cron') {
+      // /api/packs/:pack/cron — list this pack's jobs
+      if (segs.length === 1) {
+        if (method !== 'GET') {
+          sendJson(res, 405, { error: 'Method not allowed' });
+          return;
+        }
+        const list = handleListPackCron(packName);
+        if (!list) {
+          sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+          return;
+        }
+        sendJson(res, 200, list);
+        return;
+      }
+      // /api/packs/:pack/cron/:id/:action — pause | resume | run
+      if (segs.length === 3) {
+        if (method !== 'POST') {
+          sendJson(res, 405, { error: 'Method not allowed' });
+          return;
+        }
+        const action = segs[2]!;
+        if (action !== 'pause' && action !== 'resume' && action !== 'run') {
+          sendJson(res, 400, { error: `Invalid cron action: ${action}` });
+          return;
+        }
+        const result = await handleCronAction(packName, segs[1]!, action as CronAction);
+        if (!result.ok) {
+          sendJson(res, result.status, { error: result.error });
+          return;
+        }
+        sendJson(res, 200, result);
         return;
       }
     }

@@ -297,6 +297,30 @@ export async function runJob(
   return requireJob(loadJobs(), id);
 }
 
+/**
+ * Executes a job's prompt without touching persisted state.
+ *
+ * Unlike `runJob`, this does not advance `next_run_at`, bump `last_run_at`,
+ * mark `state='running'`, write an output file, or dispatch a proactive
+ * message. Used by the dashboard's "Run now (preview)" affordance so users
+ * can see what a cron would produce without disturbing its schedule.
+ *
+ * The agent execution itself still incurs whatever side effects the prompt's
+ * tools cause (e.g., `persist` writes still happen) — only the scheduler's
+ * own bookkeeping is suppressed. We expose this intentionally: a true
+ * sandboxed dry-run would require tool-level dry-run support that the agent
+ * runtime does not yet have.
+ */
+export async function dryRunJob(
+  config: AouoConfig,
+  id: string,
+): Promise<{ output: string; status: 'ok' | 'silent' }> {
+  const job = requireJob(loadJobs(), id);
+  const raw = await runAgentForJob(config, job);
+  const status: 'ok' | 'silent' = raw.startsWith(SILENT_MARKER) ? 'silent' : 'ok';
+  return { output: status === 'silent' ? '' : raw, status };
+}
+
 // ── Internal: Agent Execution ────────────────────────────────────────────────
 
 /**
