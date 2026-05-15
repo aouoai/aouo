@@ -65,6 +65,14 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Internals',
+          items: [
+            { label: 'Telegram Adapter', slug: 'internals/telegram-adapter' },
+            { label: 'Message Pipeline', slug: 'internals/message-pipeline' },
+            { label: 'Pack Routing', slug: 'internals/pack-routing' },
+          ],
+        },
+        {
           label: 'Reference',
           items: [{ label: 'CLI', slug: 'reference/cli' }],
         },
