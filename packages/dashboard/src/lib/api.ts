@@ -51,6 +51,81 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+export interface SseFrame {
+  event: string
+  data: unknown
+}
+
+export interface StreamOptions {
+  signal?: AbortSignal
+}
+
+/**
+ * POSTs `body` to `path` and yields parsed SSE frames to `onFrame` until the
+ * server closes the stream. Throws on non-2xx HTTP responses; later transport
+ * errors are surfaced through the caller's `onFrame` (the agent emits an
+ * `event: error` frame before closing).
+ */
+async function stream(
+  path: string,
+  body: unknown,
+  onFrame: (frame: SseFrame) => void,
+  opts: StreamOptions = {},
+): Promise<void> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      'X-Aouo-Token': getToken(),
+    },
+    body: JSON.stringify(body),
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  })
+
+  if (!res.ok) {
+    const fallback = await res.json().catch(() => ({}))
+    throw new Error(fallback.error ?? `Stream failed: ${res.status}`)
+  }
+  if (!res.body) {
+    throw new Error('Stream response has no body')
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() ?? ''
+      for (const block of parts) {
+        const lines = block.split('\n').filter((l) => l && !l.startsWith(':'))
+        const evLine = lines.find((l) => l.startsWith('event: '))
+        const dataLine = lines.find((l) => l.startsWith('data: '))
+        if (!evLine || !dataLine) continue
+        const event = evLine.slice('event: '.length)
+        let data: unknown = null
+        try {
+          data = JSON.parse(dataLine.slice('data: '.length))
+        } catch {
+          data = dataLine.slice('data: '.length)
+        }
+        onFrame({ event, data })
+      }
+    }
+  } finally {
+    try {
+      await reader.cancel()
+    } catch {
+      // swallow
+    }
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
 
@@ -59,4 +134,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  stream,
 }

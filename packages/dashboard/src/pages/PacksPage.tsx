@@ -1,6 +1,8 @@
-import { AlertCircle, Package } from 'lucide-react'
+import { AlertCircle, ArrowRight, Package } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -9,6 +11,7 @@ import { usePacks } from '@/hooks/use-config'
 
 export function PacksPage() {
   const { data, isLoading, error } = usePacks()
+  const navigate = useNavigate()
 
   return (
     <div>
@@ -67,11 +70,16 @@ export function PacksPage() {
                   <TableHead className="w-20 text-right">Skills</TableHead>
                   <TableHead className="w-20 text-right">Cron</TableHead>
                   <TableHead>Path</TableHead>
+                  <TableHead className="w-24 pr-4 text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.packs.map((p) => (
-                  <TableRow key={p.name}>
+                  <TableRow
+                    key={p.name}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/packs/${p.name}`)}
+                  >
                     <TableCell className="pl-4">
                       <div className="flex flex-col">
                         <span className="font-medium">{p.name}</span>
@@ -89,6 +97,19 @@ export function PacksPage() {
                     <TableCell className="text-right tabular-nums">{p.cronDefaults}</TableCell>
                     <TableCell className="max-w-55 truncate font-mono text-[11px] text-muted-foreground" title={p.path}>
                       {p.path}
+                    </TableCell>
+                    <TableCell className="pr-4 text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigate(`/packs/${p.name}`)
+                        }}
+                      >
+                        Open
+                        <ArrowRight className="size-3.5" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

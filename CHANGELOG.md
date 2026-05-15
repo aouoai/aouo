@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dashboard pack workspace at `/packs/:pack`: each loaded pack becomes a per-app surface with its own breadcrumb topbar, centered display name, settings affordance, and a Chat tab backed by the SSE chat endpoint. Memory / Storage / Cron / Logs tabs are placeholders for Phase 5.
+- Dashboard chat input supports a `/` skill picker (cmdk-powered popover) that turns the chosen skill into a soft `skillHint` on the next agent turn.
+- Dashboard layout rebuilt on the shadcn sidebar-07 primitive: collapsible-to-icon sidebar with `Apps` (dynamic packs) at the top, then `Workspace` and `Settings` groups.
 - `POST /api/packs/:pack/chat` streams an Agent turn as Server-Sent Events (`token` / `tool_call` / `tool_result` / `dispatch` / `done` / `error`). Dashboard sessions are stored under `platform='web'` alongside the existing Telegram routes.
 - `GET /api/packs/:pack` returns a loaded pack's detail (manifest, parsed SKILL.md metadata, cron defaults) for the dashboard pack workspace.
 - `WebSessionAdapter` — a non-Telegram `Adapter` implementation that turns Agent events into Server-Sent Events for the local dashboard.

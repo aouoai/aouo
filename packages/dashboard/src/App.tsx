@@ -7,6 +7,7 @@ import { ChannelsPage } from '@/pages/ChannelsPage'
 import { AdvancedPage } from '@/pages/AdvancedPage'
 import { SecurityPage } from '@/pages/SecurityPage'
 import { PacksPage } from '@/pages/PacksPage'
+import { PackWorkspacePage } from '@/pages/PackWorkspacePage'
 import { StatusPage } from '@/pages/StatusPage'
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="advanced" element={<AdvancedPage />} />
           <Route path="security" element={<SecurityPage />} />
           <Route path="packs" element={<PacksPage />} />
+          <Route path="packs/:pack" element={<PackWorkspacePage />} />
           <Route path="status" element={<StatusPage />} />
         </Route>
       </Routes>
