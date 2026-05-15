@@ -100,9 +100,18 @@ The current repo is a pre-alpha implementation of the runtime idea. It already c
 - a scheduler for proactive pack runs
 - a Telegram channel adapter
 - a local dashboard for configuration and inspection
+- a local pack chat workspace inside the dashboard — each installed pack is a per-app surface with a streaming chat panel and a `/skill` quick-picker (Memory / Storage / Cron / Logs viewers arrive next)
 - sample packs for notes, content creation, and vocabulary learning
 
 These pieces prove the runtime shape. They are not the final product surface. The next step is to make local usage feel first-class: pack selection, chat, memory, database, schedules, permissions, and status in one coherent client.
+
+To try the local dashboard chat:
+
+```bash
+aouo ui start
+# then open the printed http://127.0.0.1:9800/?token=… URL
+# pick a pack from the Apps sidebar and start chatting
+```
 
 ---
 

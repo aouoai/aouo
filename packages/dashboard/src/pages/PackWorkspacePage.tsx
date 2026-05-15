@@ -120,7 +120,7 @@ export function PackWorkspacePage() {
             value="chat"
             className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
           >
-            <ChatPanel pack={pack} />
+            <ChatPanel key={pack.name} pack={pack} />
           </TabsContent>
 
           {FUTURE_TABS.map((t) => (

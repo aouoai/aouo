@@ -1,16 +1,19 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertCircle, Bot, User } from 'lucide-react'
+import { AlertCircle, Bot, RefreshCw, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import type { ChatMessage } from '@/hooks/use-chat'
 
 interface MessageBubbleProps {
   message: ChatMessage
+  /** Shown next to the error footer on the trailing failed assistant turn. */
+  onRetry?: () => void
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const Icon = isUser ? User : Bot
   return (
@@ -56,9 +59,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
         </div>
         {message.error && (
-          <div className="flex items-center gap-1.5 text-xs text-destructive">
+          <div className="flex items-center gap-2 text-xs text-destructive">
             <AlertCircle className="size-3.5" />
             <span>{message.error}</span>
+            {onRetry && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-1.5 text-xs text-destructive hover:text-destructive"
+                onClick={onRetry}
+              >
+                <RefreshCw className="size-3" />
+                Retry
+              </Button>
+            )}
           </div>
         )}
       </div>

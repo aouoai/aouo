@@ -47,9 +47,11 @@ describe('GET /api/packs/:pack', () => {
     expect(status).toBe(404);
   });
 
-  it('returns 400 when the pack name is missing or contains a slash', async () => {
+  it('returns 404 for unknown sub-paths under /api/packs/:pack', async () => {
+    // The router only recognises `:pack`, `:pack/chat`, and `:pack/history`.
+    // Anything else falls through to the generic "Unknown endpoint" branch.
     const sub = await api('/api/packs/foo/bar');
-    expect(sub.status).toBe(400);
+    expect(sub.status).toBe(404);
   });
 
   it('returns pack manifest fields and parsed skill metadata for a loaded pack', async () => {

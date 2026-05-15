@@ -77,10 +77,12 @@ export function ChatPanel({ pack }: ChatPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {empty ? (
+      {chat.loadingHistory ? (
+        <LoadingState />
+      ) : empty ? (
         <EmptyState pack={pack} onPick={pickSkill} />
       ) : (
-        <MessageList messages={chat.messages} />
+        <MessageList messages={chat.messages} onRetry={chat.retry} />
       )}
 
       <div className="border-t bg-background/95 backdrop-blur">
@@ -167,6 +169,14 @@ export function ChatPanel({ pack }: ChatPanelProps) {
           </Popover>
         </div>
       </div>
+    </div>
+  )
+}
+
+function LoadingState() {
+  return (
+    <div className="flex flex-1 items-center justify-center px-6 text-sm text-muted-foreground">
+      Loading conversation…
     </div>
   )
 }

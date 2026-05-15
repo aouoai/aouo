@@ -20,6 +20,8 @@ import { hasCodexAuth } from '../lib/auth.js';
 import { loadManifestFile } from '../packs/manifest.js';
 import { scanForPacks, getLoadedPacks } from '../packs/loader.js';
 import { getAllSkills } from '../packs/skillRegistry.js';
+import { getDb } from '../storage/db.js';
+import { getRouteState } from '../storage/conversationRoutes.js';
 
 // ── Masking ──────────────────────────────────────────────────────────────────
 
@@ -332,5 +334,79 @@ export function handleGetPackDetail(name: string): PackDetailResponse | null {
     path: loaded.sourcePath,
     skills,
     cron,
+  };
+}
+
+// ── Pack chat history ────────────────────────────────────────────────────────
+
+export interface HistoryMessageDto {
+  /** Stable DB id used as a React key on the dashboard. */
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  /** SQLite ISO timestamp (UTC) for ordering and display. */
+  createdAt: string;
+}
+
+export interface PackHistoryResponse {
+  /** Active session bound to the dashboard route, or null when none exists yet. */
+  sessionId: string | null;
+  /** Oldest-first slice of user / assistant turns for the bound session. */
+  messages: HistoryMessageDto[];
+}
+
+/**
+ * Hydration payload for the dashboard pack workspace. Resolves the dashboard's
+ * conversation route (platform='web', thread=pack), then loads the trailing
+ * `limit` user/assistant messages from the bound session.
+ *
+ * Returns `null` when the pack is not currently loaded so the router can
+ * respond 404. An empty array (with a null `sessionId`) means the pack is
+ * loaded but the dashboard has not yet started a conversation against it.
+ */
+export function handleGetPackHistory(name: string, limit: number): PackHistoryResponse | null {
+  if (!getLoadedPacks().some((p) => p.manifest.name === name)) return null;
+
+  const route = getRouteState({
+    platform: 'web',
+    chatId: 'dashboard',
+    threadId: name,
+    userId: 'local',
+  });
+  if (!route?.sessionId) {
+    return { sessionId: null, messages: [] };
+  }
+
+  // We only show user/assistant turns with real text content. Tool messages
+  // and assistant turns that only carry tool_calls live in the agent's
+  // runtime history but have no rendering surface in the chat MVP — Phase 5
+  // will add a tools / memory viewer that consumes the full row set.
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT id, role, content, created_at
+       FROM messages
+       WHERE session_id = ?
+         AND role IN ('user', 'assistant')
+         AND content IS NOT NULL
+         AND content != ''
+       ORDER BY seq DESC
+       LIMIT ?`,
+    )
+    .all(route.sessionId, limit) as Array<{
+    id: number;
+    role: string;
+    content: string;
+    created_at: string;
+  }>;
+
+  return {
+    sessionId: route.sessionId,
+    messages: rows.reverse().map((r) => ({
+      id: r.id,
+      role: r.role as 'user' | 'assistant',
+      content: r.content,
+      createdAt: r.created_at,
+    })),
   };
 }

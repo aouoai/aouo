@@ -17,6 +17,7 @@ import {
   handleGetConfig,
   handleGetConfigRaw,
   handleGetPackDetail,
+  handleGetPackHistory,
   handleGetPacks,
   handleGetStatus,
   handlePutConfig,
@@ -127,8 +128,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
     return;
   }
 
-  const url = req.url ?? '';
-  const path = url.split('?')[0] ?? '';
+  const rawUrl = req.url ?? '';
+  const parsedUrl = new URL(rawUrl, 'http://localhost');
+  const path = parsedUrl.pathname;
   const method = (req.method ?? 'GET').toUpperCase();
 
   // GET /api/config
@@ -173,37 +175,58 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
     sendJson(res, 200, handleGetPacks());
     return;
   }
-  // GET /api/packs/:pack
-  if (method === 'GET' && path.startsWith('/api/packs/') && !path.endsWith('/chat')) {
-    const packName = path.slice('/api/packs/'.length);
-    if (!packName || packName.includes('/')) {
-      sendJson(res, 400, { error: 'Invalid pack name' });
+  // /api/packs/:pack[/chat|/history]
+  const packMatch = path.match(/^\/api\/packs\/([^/]+)(?:\/(chat|history))?$/);
+  if (packMatch) {
+    const packName = packMatch[1]!;
+    const sub = packMatch[2];
+
+    if (!sub) {
+      if (method !== 'GET') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      const detail = handleGetPackDetail(packName);
+      if (!detail) {
+        sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+        return;
+      }
+      sendJson(res, 200, detail);
       return;
     }
-    const detail = handleGetPackDetail(packName);
-    if (!detail) {
-      sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+
+    if (sub === 'chat') {
+      if (method !== 'POST') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      let body: unknown;
+      try {
+        body = await readJson(req);
+      } catch (err) {
+        sendJson(res, 400, { error: `Invalid JSON body: ${(err as Error).message}` });
+        return;
+      }
+      await handleChatStream(req, res, packName, body);
       return;
     }
-    sendJson(res, 200, detail);
-    return;
-  }
-  // POST /api/packs/:pack/chat
-  if (method === 'POST' && path.startsWith('/api/packs/') && path.endsWith('/chat')) {
-    const packName = path.slice('/api/packs/'.length, -'/chat'.length);
-    if (!packName || packName.includes('/')) {
-      sendJson(res, 400, { error: 'Invalid pack name' });
+
+    if (sub === 'history') {
+      if (method !== 'GET') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      // Clamp limit to a safe range; default 50 mirrors the dashboard hook.
+      const raw = Number.parseInt(parsedUrl.searchParams.get('limit') ?? '50', 10);
+      const limit = Math.min(200, Math.max(1, Number.isFinite(raw) ? raw : 50));
+      const history = handleGetPackHistory(packName, limit);
+      if (!history) {
+        sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+        return;
+      }
+      sendJson(res, 200, history);
       return;
     }
-    let body: unknown;
-    try {
-      body = await readJson(req);
-    } catch (err) {
-      sendJson(res, 400, { error: `Invalid JSON body: ${(err as Error).message}` });
-      return;
-    }
-    await handleChatStream(req, res, packName, body);
-    return;
   }
 
   sendJson(res, 404, { error: `Unknown endpoint: ${method} ${path}` });

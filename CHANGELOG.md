@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `GET /api/packs/:pack/history` returns the dashboard's bound session id and its most recent user/assistant turns (default 50, capped at 200). The pack workspace uses it to rehydrate the chat panel on mount so refreshes no longer drop the conversation.
+- Chat panel surfaces a per-message **Retry** affordance on the trailing failed assistant turn. Retry drops the failed pair and re-streams the prior user input so the transcript stays clean.
 - Dashboard pack workspace at `/packs/:pack`: each loaded pack becomes a per-app surface with its own breadcrumb topbar, centered display name, settings affordance, and a Chat tab backed by the SSE chat endpoint. Memory / Storage / Cron / Logs tabs are placeholders for Phase 5.
 - Dashboard chat input supports a `/` skill picker (cmdk-powered popover) that turns the chosen skill into a soft `skillHint` on the next agent turn.
 - Dashboard layout rebuilt on the shadcn sidebar-07 primitive: collapsible-to-icon sidebar with `Apps` (dynamic packs) at the top, then `Workspace` and `Settings` groups.
