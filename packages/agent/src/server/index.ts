@@ -24,6 +24,7 @@ import {
 } from './handlers.js';
 import { handleChatStream } from './chat.js';
 import { handleListMemory, handleReadMemoryFile } from './memory.js';
+import { handleListStorageTables, handleReadStorageRows } from './storage.js';
 import { generateToken, safeEqualToken } from './token.js';
 import { serveStatic } from './static.js';
 import { logger } from '../lib/logger.js';
@@ -256,6 +257,35 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
       // memory/<file>/<extra> is not a thing
       sendJson(res, 404, { error: `Unknown endpoint: ${method} ${path}` });
       return;
+    }
+
+    if (segs[0] === 'storage' && segs[1] === 'tables') {
+      if (method !== 'GET') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      // /api/packs/:pack/storage/tables — list
+      if (segs.length === 2) {
+        const list = handleListStorageTables(packName);
+        if (!list) {
+          sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+          return;
+        }
+        sendJson(res, 200, list);
+        return;
+      }
+      // /api/packs/:pack/storage/tables/:name — rows
+      if (segs.length === 3) {
+        const raw = Number.parseInt(parsedUrl.searchParams.get('limit') ?? '50', 10);
+        const limit = Math.min(500, Math.max(1, Number.isFinite(raw) ? raw : 50));
+        const result = handleReadStorageRows(packName, segs[2]!, limit);
+        if (!result.ok) {
+          sendJson(res, result.status, { error: result.error });
+          return;
+        }
+        sendJson(res, 200, result.data);
+        return;
+      }
     }
   }
 

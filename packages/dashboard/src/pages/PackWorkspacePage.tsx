@@ -19,9 +19,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { usePackDetail } from '@/hooks/use-pack'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { MemoryTab } from '@/components/workspace/MemoryTab'
+import { StorageTab } from '@/components/workspace/StorageTab'
 
 const PHASE5_TABS = [
-  { value: 'storage', label: 'Storage', icon: Database },
   { value: 'cron', label: 'Cron', icon: Clock },
   { value: 'logs', label: 'Logs', icon: ScrollText },
 ] as const
@@ -106,6 +106,13 @@ export function PackWorkspacePage() {
                 <FolderTree className="size-3.5" />
                 Memory
               </TabsTrigger>
+              <TabsTrigger
+                value="storage"
+                className="gap-1.5 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                <Database className="size-3.5" />
+                Storage
+              </TabsTrigger>
               {PHASE5_TABS.map((t) => {
                 const Icon = t.icon
                 return (
@@ -135,6 +142,13 @@ export function PackWorkspacePage() {
             className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
           >
             <MemoryTab key={pack.name} pack={pack.name} />
+          </TabsContent>
+
+          <TabsContent
+            value="storage"
+            className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
+          >
+            <StorageTab key={pack.name} pack={pack.name} />
           </TabsContent>
 
           {PHASE5_TABS.map((t) => (
