@@ -6,9 +6,13 @@ import { startUiServer, type UiServerHandle } from '../../src/server/index.js';
 import { loadPack, unloadAllPacks } from '../../src/packs/loader.js';
 import { AOUO_HOME } from '../../src/lib/paths.js';
 
-const FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'packs', 'hello-world');
+// Uses a dedicated fixture (no schema.sql) so concurrent test files that
+// `loadPack` other fixtures don't race against this suite's manual seeding.
+// The shared AOUO_HOME means any fixture with a schema would have its DB
+// recreated by another worker mid-test.
+const FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'packs', 'storage-test');
 const STORE_DIR = join(AOUO_HOME, 'data', 'store');
-const PACK_DB = join(STORE_DIR, 'hello-world.db');
+const PACK_DB = join(STORE_DIR, 'storage-test.db');
 
 interface TablesBody {
   exists: boolean;
@@ -55,7 +59,7 @@ describe('GET /api/packs/:pack/storage/tables[/<name>]', () => {
 
   it('returns exists=false when the pack DB has not been created', async () => {
     const { status, body } = await api<TablesBody>(
-      '/api/packs/hello-world/storage/tables',
+      '/api/packs/storage-test/storage/tables',
     );
     expect(status).toBe(200);
     expect(body.exists).toBe(false);
@@ -84,7 +88,7 @@ describe('GET /api/packs/:pack/storage/tables[/<name>]', () => {
     seed.close();
 
     const { status, body } = await api<TablesBody>(
-      '/api/packs/hello-world/storage/tables',
+      '/api/packs/storage-test/storage/tables',
     );
     expect(status).toBe(200);
     expect(body.exists).toBe(true);
@@ -101,7 +105,7 @@ describe('GET /api/packs/:pack/storage/tables[/<name>]', () => {
 
   it('reads rows for a table in most-recent-first order', async () => {
     const { status, body } = await api<RowsBody>(
-      '/api/packs/hello-world/storage/tables/greetings',
+      '/api/packs/storage-test/storage/tables/greetings',
     );
     expect(status).toBe(200);
     expect(body.table).toBe('greetings');
@@ -114,7 +118,7 @@ describe('GET /api/packs/:pack/storage/tables[/<name>]', () => {
 
   it('clamps the limit query and reports truncation', async () => {
     const { body } = await api<RowsBody>(
-      '/api/packs/hello-world/storage/tables/greetings?limit=2',
+      '/api/packs/storage-test/storage/tables/greetings?limit=2',
     );
     expect(body.rows.length).toBe(2);
     expect(body.truncated).toBe(true);
@@ -122,26 +126,24 @@ describe('GET /api/packs/:pack/storage/tables[/<name>]', () => {
 
   it('rejects unsafe table names with 400', async () => {
     const { status } = await api(
-      '/api/packs/hello-world/storage/tables/greetings;drop',
+      '/api/packs/storage-test/storage/tables/greetings;drop',
     );
     expect(status).toBe(400);
   });
 
   it('returns 404 for a table that does not exist', async () => {
     const { status } = await api(
-      '/api/packs/hello-world/storage/tables/nope',
+      '/api/packs/storage-test/storage/tables/nope',
     );
     expect(status).toBe(404);
   });
 
   it('returns 404 reading rows when the pack DB has not been created', async () => {
-    // hello-world DB exists from earlier seeding — exercise the branch on a
-    // never-persisted pack by routing through one that is not loaded; the
-    // pack-not-loaded check fires first, but we want to verify the DB-missing
-    // branch on the only loaded pack too. Drop the file and retry.
+    // storage-test DB was just seeded above; drop it to exercise the
+    // "DB has not been initialized" branch on a loaded pack.
     rmSync(PACK_DB);
     const { status, body } = await api<{ error: string }>(
-      '/api/packs/hello-world/storage/tables/greetings',
+      '/api/packs/storage-test/storage/tables/greetings',
     );
     expect(status).toBe(404);
     expect(body.error).toMatch(/not been initialized/i);

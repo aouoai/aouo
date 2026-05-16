@@ -1,0 +1,7 @@
+name: storage-test
+version: 1.0.0
+display_name: Storage Test Pack
+description: Used exclusively by tests/server/packStorage.test.ts. Has no schema so `loadPack` does not race against the test's own seeding.
+
+provided_skills:
+  - dummy

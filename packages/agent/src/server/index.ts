@@ -26,6 +26,7 @@ import { handleChatStream } from './chat.js';
 import { handleListMemory, handleReadMemoryFile } from './memory.js';
 import { handleListStorageTables, handleReadStorageRows } from './storage.js';
 import { handleCronAction, handleListPackCron, type CronAction } from './cron.js';
+import { handleReadPackLogs } from './logs.js';
 import { generateToken, safeEqualToken } from './token.js';
 import { serveStatic } from './static.js';
 import { logger } from '../lib/logger.js';
@@ -287,6 +288,27 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
         sendJson(res, 200, result.data);
         return;
       }
+    }
+
+    if (segs[0] === 'logs' && segs.length === 1) {
+      if (method !== 'GET') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      const levelRaw = parsedUrl.searchParams.get('level') ?? undefined;
+      const beforeRaw = parsedUrl.searchParams.get('before') ?? undefined;
+      const limitRaw = Number.parseInt(parsedUrl.searchParams.get('limit') ?? '200', 10);
+      const logs = handleReadPackLogs(packName, {
+        ...(levelRaw ? { level: levelRaw } : {}),
+        ...(beforeRaw ? { before: beforeRaw } : {}),
+        ...(Number.isFinite(limitRaw) ? { limit: limitRaw } : {}),
+      });
+      if (!logs) {
+        sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
+        return;
+      }
+      sendJson(res, 200, logs);
+      return;
     }
 
     if (segs[0] === 'cron') {

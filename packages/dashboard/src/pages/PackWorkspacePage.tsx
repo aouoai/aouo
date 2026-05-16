@@ -21,10 +21,7 @@ import { ChatPanel } from '@/components/chat/ChatPanel'
 import { MemoryTab } from '@/components/workspace/MemoryTab'
 import { StorageTab } from '@/components/workspace/StorageTab'
 import { CronTab } from '@/components/workspace/CronTab'
-
-const PHASE5_TABS = [
-  { value: 'logs', label: 'Logs', icon: ScrollText },
-] as const
+import { LogsTab } from '@/components/workspace/LogsTab'
 
 export function PackWorkspacePage() {
   const { pack: packName } = useParams<{ pack: string }>()
@@ -120,20 +117,13 @@ export function PackWorkspacePage() {
                 <Clock className="size-3.5" />
                 Cron
               </TabsTrigger>
-              {PHASE5_TABS.map((t) => {
-                const Icon = t.icon
-                return (
-                  <TabsTrigger
-                    key={t.value}
-                    value={t.value}
-                    disabled
-                    className="gap-1.5 text-muted-foreground/50"
-                  >
-                    <Icon className="size-3.5" />
-                    {t.label}
-                  </TabsTrigger>
-                )
-              })}
+              <TabsTrigger
+                value="logs"
+                className="gap-1.5 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                <ScrollText className="size-3.5" />
+                Logs
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -165,17 +155,12 @@ export function PackWorkspacePage() {
             <CronTab key={pack.name} pack={pack.name} />
           </TabsContent>
 
-          {PHASE5_TABS.map((t) => (
-            <TabsContent
-              key={t.value}
-              value={t.value}
-              className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
-            >
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                {t.label} viewer arrives in a follow-up commit.
-              </div>
-            </TabsContent>
-          ))}
+          <TabsContent
+            value="logs"
+            className="flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden"
+          >
+            <LogsTab key={pack.name} pack={pack.name} />
+          </TabsContent>
         </Tabs>
       )}
     </div>
