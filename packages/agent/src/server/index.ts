@@ -23,7 +23,7 @@ import {
   handlePutConfig,
 } from './handlers.js';
 import { handleChatStream } from './chat.js';
-import { handleListMemory, handleReadMemoryFile } from './memory.js';
+import { handleListMemory, handleReadMemoryFile, handleWriteMemoryFile } from './memory.js';
 import { handleListStorageTables, handleReadStorageRows } from './storage.js';
 import { handleCronAction, handleListPackCron, type CronAction } from './cron.js';
 import { handleReadPackLogs } from './logs.js';
@@ -234,11 +234,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
     }
 
     if (segs[0] === 'memory') {
-      if (method !== 'GET') {
-        sendJson(res, 405, { error: 'Method not allowed' });
-        return;
-      }
+      // GET /api/packs/:pack/memory — list
       if (segs.length === 1) {
+        if (method !== 'GET') {
+          sendJson(res, 405, { error: 'Method not allowed' });
+          return;
+        }
         const list = handleListMemory(packName);
         if (!list) {
           sendJson(res, 404, { error: `Pack not loaded: ${packName}` });
@@ -247,13 +248,38 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, expectedToke
         sendJson(res, 200, list);
         return;
       }
+      // GET|PUT /api/packs/:pack/memory/:file
       if (segs.length === 2) {
-        const result = handleReadMemoryFile(packName, segs[1]!);
-        if (!result.ok) {
-          sendJson(res, result.status, { error: result.error });
+        if (method === 'GET') {
+          const result = handleReadMemoryFile(packName, segs[1]!);
+          if (!result.ok) {
+            sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          sendJson(res, 200, result.file);
           return;
         }
-        sendJson(res, 200, result.file);
+        if (method === 'PUT') {
+          let body: unknown;
+          try {
+            body = await readJson(req);
+          } catch (err) {
+            sendJson(res, 400, { error: `Invalid JSON body: ${(err as Error).message}` });
+            return;
+          }
+          const content =
+            body && typeof body === 'object' && 'content' in body
+              ? (body as { content: unknown }).content
+              : undefined;
+          const result = handleWriteMemoryFile(packName, segs[1]!, content);
+          if (!result.ok) {
+            sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          sendJson(res, 200, result.file);
+          return;
+        }
+        sendJson(res, 405, { error: 'Method not allowed' });
         return;
       }
       // memory/<file>/<extra> is not a thing
@@ -357,7 +383,10 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-const MAX_BODY_BYTES = 1_000_000; // 1 MB — config payloads are tiny
+// 2 MB — leaves headroom over the per-route `MAX_MEMORY_BYTES` (1 MB) so a
+// memory-edit payload at the route cap still reaches its handler and gets a
+// clean 400 rather than a TCP reset from `req.destroy()`.
+const MAX_BODY_BYTES = 2_000_000;
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolveBody, rejectBody) => {

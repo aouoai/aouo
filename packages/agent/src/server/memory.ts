@@ -1,17 +1,20 @@
 /**
  * @module server/memory
- * @description Pack-scoped memory file viewer endpoints.
+ * @description Pack-scoped memory file viewer + editor endpoints.
  *
  * Wraps the same on-disk layout the agent's `memory` tool uses
  * (`~/.aouo/data/packs/<pack>/USER.md` / `MEMORY.md`) so the dashboard's
- * Memory tab can render the live state of a pack's persistent notes without
+ * Memory tab can both read and write a pack's persistent notes without
  * going through the LLM.
  *
- * Strictly read-only. Editing lands in a follow-up commit once the viewer is
- * proven; until then, writes go through the agent's `memory` tool.
+ * GET returns the current file content. PUT replaces it atomically
+ * (write to a same-directory tmp file, then rename) so a partial write
+ * can never leave a half-flushed memory file visible to the next agent
+ * turn. The filename guard rejects path traversal and non-markdown
+ * targets on both verbs.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { packDataDir, packDataPath } from '../lib/paths.js';
 import { getLoadedPacks } from '../packs/loader.js';
@@ -143,6 +146,73 @@ export function handleReadMemoryFile(packName: string, fileName: string): Memory
   }
   const stat = statSync(path);
   const content = readFileSync(path, 'utf-8');
+  return {
+    ok: true,
+    file: {
+      name: guard.name,
+      content,
+      size: stat.size,
+      mtime: stat.mtime.toISOString(),
+    },
+  };
+}
+
+/** Body cap for a single memory file. 1 MiB matches the JSON body limit in server/index.ts. */
+const MAX_MEMORY_BYTES = 1_000_000;
+
+export type MemoryWriteResult =
+  | { ok: true; file: MemoryFileResponse }
+  | { ok: false; status: 400 | 404 | 500; error: string };
+
+/**
+ * Replaces (or creates) one memory file inside the pack data dir.
+ *
+ * Writes through a same-directory tmp file so a crash mid-write can't leave
+ * a torn record visible to the agent's `memory` tool on its next read. The
+ * pack data dir is created lazily because a pack that has never persisted
+ * anything won't have it on disk yet.
+ *
+ * Caller-supplied `content` must be a UTF-8 string under MAX_MEMORY_BYTES.
+ * Creation is allowed for any guard-approved filename — i.e. `USER.md`,
+ * `MEMORY.md`, or any other `*.md` the user wants to keep alongside them.
+ */
+export function handleWriteMemoryFile(
+  packName: string,
+  fileName: string,
+  content: unknown,
+): MemoryWriteResult {
+  if (!isLoaded(packName)) {
+    return { ok: false, status: 404, error: `Pack not loaded: ${packName}` };
+  }
+  const guard = validateFilename(fileName);
+  if (!guard.ok) {
+    return { ok: false, status: 400, error: guard.reason };
+  }
+  if (typeof content !== 'string') {
+    return { ok: false, status: 400, error: 'Body field `content` must be a string.' };
+  }
+  if (Buffer.byteLength(content, 'utf-8') > MAX_MEMORY_BYTES) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Memory file exceeds ${MAX_MEMORY_BYTES} bytes.`,
+    };
+  }
+
+  const dir = packDataDir(packName);
+  const target = join(dir, guard.name);
+  try {
+    mkdirSync(dir, { recursive: true });
+    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+    writeFileSync(tmp, content, 'utf-8');
+    try { chmodSync(tmp, 0o600); } catch { /* non-posix */ }
+    renameSync(tmp, target);
+    try { chmodSync(target, 0o600); } catch { /* non-posix */ }
+  } catch (err) {
+    return { ok: false, status: 500, error: `Failed to write ${guard.name}: ${(err as Error).message}` };
+  }
+
+  const stat = statSync(target);
   return {
     ok: true,
     file: {

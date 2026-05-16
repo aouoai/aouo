@@ -1,18 +1,21 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AlertCircle, FileText, FileX2, RefreshCw } from 'lucide-react'
+import { AlertCircle, FileText, FileX2, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 
 import {
   usePackMemory,
   usePackMemoryFile,
+  usePackMemoryWrite,
   type MemoryFileInfo,
 } from '@/hooks/use-memory'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
 interface MemoryTabProps {
@@ -149,6 +152,18 @@ function FileViewer({
     file?.name,
     Boolean(file?.exists),
   )
+  const writeMutation = usePackMemoryWrite(pack)
+
+  // Editing is a local snapshot of the file's content. We deliberately
+  // freeze it for the lifetime of the edit session — external refetches
+  // do not nudge the textarea, so the user's draft can't be silently
+  // overwritten. The `key={file.name}` on the textarea below ensures a
+  // fresh edit session for a fresh file.
+  const [editSession, setEditSession] = useState<{
+    file: string
+    draft: string
+    base: string
+  } | null>(null)
 
   if (!file) {
     return (
@@ -158,25 +173,124 @@ function FileViewer({
     )
   }
 
+  const editingThisFile = editSession?.file === file.name
+  const dirty = editingThisFile && editSession.draft !== editSession.base
+  const isSaving = writeMutation.isPending && writeMutation.variables?.file === file.name
+
+  const enterEdit = (base: string) => {
+    setEditSession({ file: file.name, draft: base, base })
+  }
+
+  const cancelEdit = () => {
+    if (
+      dirty &&
+      !window.confirm('Discard unsaved changes to ' + file.name + '?')
+    ) {
+      return
+    }
+    setEditSession(null)
+  }
+
+  const save = () => {
+    if (!editingThisFile) return
+    writeMutation.mutate(
+      { file: file.name, content: editSession.draft },
+      {
+        onSuccess: (saved) => {
+          toast.success(`Saved ${saved.name}`)
+          setEditSession(null)
+        },
+        onError: (err) => {
+          toast.error(`Save failed: ${(err as Error).message}`)
+        },
+      },
+    )
+  }
+
   return (
     <>
       <header className="flex h-10 shrink-0 items-center gap-3 border-b px-4">
         <FileText className="size-3.5 text-muted-foreground" />
         <span className="font-mono text-[12.5px]">{file.name}</span>
         {file.exists ? (
-          <span className="ml-auto text-[10.5px] text-muted-foreground">
+          <span className="text-[10.5px] text-muted-foreground">
             {file.size} bytes · updated{' '}
             {new Date(file.mtime).toLocaleString()}
           </span>
         ) : (
-          <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[10px]">
+          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
             not created yet
           </Badge>
         )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {editingThisFile ? (
+            <>
+              {dirty && (
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-amber-700 dark:text-amber-400 border-amber-500/40">
+                  unsaved
+                </Badge>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={cancelEdit}
+                disabled={isSaving}
+                className="h-7 gap-1.5"
+              >
+                <X className="size-3.5" />
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={save}
+                disabled={!dirty || isSaving}
+                className="h-7 gap-1.5"
+              >
+                {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                Save
+              </Button>
+            </>
+          ) : file.exists ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => enterEdit(data?.content ?? '')}
+              disabled={isLoading || Boolean(error)}
+              className="h-7 gap-1.5"
+            >
+              <Pencil className="size-3.5" />
+              Edit
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => enterEdit('')}
+              className="h-7 gap-1.5"
+            >
+              <Plus className="size-3.5" />
+              Create
+            </Button>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {!file.exists ? (
+        {editingThisFile ? (
+          <div className="h-full p-4">
+            <Textarea
+              key={file.name}
+              value={editSession.draft}
+              onChange={(e) =>
+                setEditSession({ ...editSession, draft: e.target.value })
+              }
+              disabled={isSaving}
+              spellCheck={false}
+              className="h-full min-h-[200px] resize-none font-mono text-[12.5px] leading-relaxed"
+              placeholder={`# ${file.displayName}\n\nWrite markdown here…`}
+            />
+          </div>
+        ) : !file.exists ? (
           <div className="px-6 py-10 text-center text-sm text-muted-foreground">
             <p className="font-medium text-foreground/80">
               {file.displayName} is empty
@@ -184,7 +298,8 @@ function FileViewer({
             <p className="mt-1 max-w-md mx-auto text-xs">
               The pack hasn't written to <code>{file.name}</code> yet. The
               agent's <code>memory</code> tool will populate it when the model
-              decides to remember something.
+              decides to remember something — or click <strong>Create</strong>{' '}
+              above to seed it from the dashboard.
             </p>
           </div>
         ) : isLoading ? (

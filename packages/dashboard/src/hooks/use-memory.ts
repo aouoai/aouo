@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 export interface MemoryFileInfo {
@@ -47,5 +47,28 @@ export function usePackMemoryFile(
     queryFn: () =>
       api.get<MemoryFile>(`/api/packs/${pack}/memory/${file}`),
     staleTime: 5_000,
+  })
+}
+
+/**
+ * Replaces (or creates) one memory file. Invalidates both the listing and
+ * the single-file query on success so the picker's `exists` flag and the
+ * viewer's content refresh from the server's echoed state.
+ */
+export function usePackMemoryWrite(pack: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: { file: string; content: string }) => {
+      return api.put<MemoryFile>(
+        `/api/packs/${pack}/memory/${vars.file}`,
+        { content: vars.content },
+      )
+    },
+    onSuccess: (_data, vars) => {
+      void queryClient.invalidateQueries({ queryKey: ['pack-memory', pack] })
+      void queryClient.invalidateQueries({
+        queryKey: ['pack-memory-file', pack, vars.file],
+      })
+    },
   })
 }

@@ -117,3 +117,99 @@ describe('GET /api/packs/:pack/memory[/<file>]', () => {
     expect(status).toBe(404);
   });
 });
+
+describe('PUT /api/packs/:pack/memory/:file', () => {
+  let handle: UiServerHandle;
+
+  beforeAll(async () => {
+    unloadAllPacks();
+    await loadPack(FIXTURE);
+    handle = await startUiServer({ port: 0, token: 'test-memory-write' });
+  });
+
+  afterAll(async () => {
+    await handle.stop();
+    unloadAllPacks();
+  });
+
+  async function put(path: string, body: unknown): Promise<{ status: number; body: MemoryFileBody | { error: string } }> {
+    const res = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
+      method: 'PUT',
+      headers: {
+        'X-Aouo-Token': handle.token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const parsed = (await res.json().catch(() => ({}))) as MemoryFileBody | { error: string };
+    return { status: res.status, body: parsed };
+  }
+
+  it('writes content and echoes the updated file state', async () => {
+    const { status, body } = await put('/api/packs/hello-world/memory/USER.md', {
+      content: '# user\n\nupdated via PUT\n',
+    });
+    expect(status).toBe(200);
+    expect('content' in body && body.content).toBe('# user\n\nupdated via PUT\n');
+    expect('size' in body && body.size).toBeGreaterThan(0);
+
+    // Round-trip via GET to confirm persistence.
+    const r = await fetch(
+      `http://127.0.0.1:${handle.port}/api/packs/hello-world/memory/USER.md`,
+      { headers: { 'X-Aouo-Token': handle.token } },
+    );
+    const round = (await r.json()) as MemoryFileBody;
+    expect(round.content).toBe('# user\n\nupdated via PUT\n');
+  });
+
+  it('creates a not-yet-existing canonical file (MEMORY.md)', async () => {
+    const { status, body } = await put('/api/packs/hello-world/memory/MEMORY.md', {
+      content: '# memory\n\nfirst write\n',
+    });
+    expect(status).toBe(200);
+    expect('content' in body && body.content).toBe('# memory\n\nfirst write\n');
+  });
+
+  it('rejects non-string content with 400', async () => {
+    const { status, body } = await put('/api/packs/hello-world/memory/USER.md', {
+      content: 42,
+    });
+    expect(status).toBe(400);
+    expect('error' in body && body.error).toMatch(/must be a string/i);
+  });
+
+  it('rejects payloads exceeding the memory cap', async () => {
+    const oversize = 'x'.repeat(1_000_001);
+    const { status, body } = await put('/api/packs/hello-world/memory/USER.md', {
+      content: oversize,
+    });
+    expect(status).toBe(400);
+    expect('error' in body && body.error).toMatch(/exceeds/i);
+  });
+
+  it('rejects non-markdown filenames with 400', async () => {
+    const { status } = await put('/api/packs/hello-world/memory/USER.txt', {
+      content: 'hi',
+    });
+    expect(status).toBe(400);
+  });
+
+  it('returns 404 when pack is not loaded', async () => {
+    const { status } = await put('/api/packs/does-not-exist/memory/USER.md', {
+      content: 'hi',
+    });
+    expect(status).toBe(404);
+  });
+
+  it('rejects the wrong method on memory listing endpoint with 405', async () => {
+    const res = await fetch(
+      `http://127.0.0.1:${handle.port}/api/packs/hello-world/memory`,
+      {
+        method: 'PUT',
+        headers: { 'X-Aouo-Token': handle.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(res.status).toBe(405);
+  });
+});
